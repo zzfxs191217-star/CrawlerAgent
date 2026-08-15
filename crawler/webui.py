@@ -7,17 +7,25 @@
 
 from __future__ import annotations
 
+import threading
+
 import gradio as gr
 
-from .multi_agent.orchestration import run_pipeline
+from . import config
+from .memory.store import KnowledgeStore
+from .multi_agent.orchestration import PipelineCancelled, run_pipeline
+
+# 取消标志：点击“取消任务”置位，流水线在步骤间轮询后抛出 PipelineCancelled。
+_cancel_event = threading.Event()
 
 
-def run_analysis(topic: str, progress=gr.Progress()):
-    """执行完整分析流水线，返回报告 Markdown、文件路径与 Token 用量。"""
+def run_analysis(topic: str, gather_model: str, model: str, progress=gr.Progress()):
+    """执行完整分析流水线，返回报告 Markdown、文件路径、Token 用量与可下载文件。"""
     topic = (topic or "").strip()
     if not topic:
         raise gr.Error("请先输入一个分析课题，例如：分析字节跳动旗下豆包与阿里通义千问的竞争态势")
 
+    _cancel_event.clear()
     progress(0.02, desc="准备开始…")
 
     def on_progress(msg: str, frac: float | None) -> None:
@@ -25,14 +33,27 @@ def run_analysis(topic: str, progress=gr.Progress()):
             progress(frac, desc=msg)
 
     try:
-        result = run_pipeline(topic, progress=on_progress)
+        result = run_pipeline(
+            topic,
+            gather_model=gather_model,
+            model=model,
+            progress=on_progress,
+            cancelled=lambda: _cancel_event.is_set(),
+        )
+    except PipelineCancelled:
+        raise gr.Error("任务已取消，可重新开始。")
     except RuntimeError as exc:
         raise gr.Error(str(exc))
 
     report_path = str(result["report_path"])
     note = result["knowledge_note"]
     footer = f"> 报告已保存：`{report_path}` ｜ {note}"
-    return result["report"] + "\n\n" + footer, report_path, result["tracker"].summary()
+    return result["report"] + "\n\n" + footer, report_path, result["tracker"].summary(), report_path
+
+
+def request_cancel() -> str:
+    _cancel_event.set()
+    return "已请求取消：当前步骤结束后会停止，约 3–5 秒内生效。"
 
 
 def search_memory(query: str, top_k: int = 5):
@@ -40,8 +61,6 @@ def search_memory(query: str, top_k: int = 5):
     query = (query or "").strip()
     if not query:
         raise gr.Error("请输入检索问题，例如：豆包月活多少？")
-    from .memory.store import KnowledgeStore
-
     results = KnowledgeStore().search(query, top_k=int(top_k))
     if not results:
         return "知识库为空或没有相关结果。可以先跑一次「分析报告」再回来检索。"
@@ -66,16 +85,33 @@ def build_demo() -> gr.Blocks:
                 placeholder="例如：分析字节跳动旗下豆包与阿里通义千问的竞争态势",
                 lines=2,
             )
-            run_btn = gr.Button("开始分析", variant="primary")
+            with gr.Row():
+                gather_model = gr.Dropdown(
+                    choices=[config.LLM_MODEL_FLASH, config.LLM_MODEL_PLUS],
+                    value=config.LLM_MODEL_FLASH,
+                    label="收集/整理模型",
+                )
+                model = gr.Dropdown(
+                    choices=[config.LLM_MODEL_PLUS, config.LLM_MODEL_FLASH],
+                    value=config.LLM_MODEL_PLUS,
+                    label="分析/审查模型",
+                )
+            with gr.Row():
+                run_btn = gr.Button("开始分析", variant="primary")
+                cancel_btn = gr.Button("取消任务", variant="stop")
+            cancel_status = gr.Textbox(label="状态", interactive=False, lines=1)
             report_md = gr.Markdown(label="分析报告")
-            path_out = gr.Textbox(label="报告文件路径", interactive=False, lines=1)
-            tokens_out = gr.Textbox(label="Token 用量", interactive=False, lines=1)
+            with gr.Row():
+                path_out = gr.Textbox(label="报告文件路径", interactive=False, lines=1)
+                tokens_out = gr.Textbox(label="Token 用量", interactive=False, lines=1)
+            report_file = gr.File(label="下载报告", interactive=False)
             run_btn.click(
                 run_analysis,
-                inputs=[topic],
-                outputs=[report_md, path_out, tokens_out],
+                inputs=[topic, gather_model, model],
+                outputs=[report_md, path_out, tokens_out, report_file],
             )
-            gr.Markdown("> 提示：一次完整分析约需 3–5 分钟，期间请勿关闭页面。")
+            cancel_btn.click(request_cancel, outputs=[cancel_status])
+            gr.Markdown("> 提示：一次完整分析约需 3–5 分钟；「取消任务」会在当前步骤结束后停止。")
         with gr.Tab("知识库检索"):
             query = gr.Textbox(
                 label="检索问题",

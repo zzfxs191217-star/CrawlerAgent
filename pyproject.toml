@@ -1,6 +1,9 @@
 [project]
 name = "crawleragent"
 version = "0.1.0"
+description = "基于阿里云百炼大模型的竞品情报分析智能体：输入公司/产品名，自动搜索新闻、抓取正文、多角色协同分析，输出带引用来源的 Markdown 竞争态势报告。"
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "beautifulsoup4>=4.15.0",

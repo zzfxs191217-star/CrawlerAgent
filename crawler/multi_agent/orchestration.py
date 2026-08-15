@@ -25,6 +25,10 @@ from .reviewer import run_reviewer
 REPORTS_DIR = Path(__file__).resolve().parent.parent.parent / "reports"
 MAX_REVISION_ROUNDS = 2
 
+
+class PipelineCancelled(RuntimeError):
+    """分析任务被用户取消（Web 界面取消按钮触发）。"""
+
 GATHER_SYSTEM = (
     "你是 CrawlerAgent 的情报收集员。根据分析主题搜索相关新闻报道并抓取正文，"
     "最多搜索 2 次、抓取 2-3 篇正文后立即停止。优先选择可信来源（白名单媒体、官方渠道）。"
@@ -38,7 +42,8 @@ def _parse_fetch_result(result: str) -> tuple[str, str]:
     return "", result
 
 
-def gather_materials(client, tracker, model: str, tools: list[dict], topic: str, timeout: int) -> list[dict]:
+def gather_materials(client, tracker, model: str, tools: list[dict], topic: str, timeout: int,
+                     cancelled=None) -> list[dict]:
     messages = [
         {"role": "system", "content": GATHER_SYSTEM},
         {"role": "user", "content": f"分析主题：{topic}\n请搜索相关新闻并抓取 2-3 篇正文质量良好的文章。"},
@@ -47,6 +52,8 @@ def gather_materials(client, tracker, model: str, tools: list[dict], topic: str,
     seen: set[str] = set()
     start = time.time()
     for step in range(config.MAX_AGENT_ITERATIONS):
+        if cancelled is not None and cancelled():
+            raise PipelineCancelled("任务已被用户取消")
         if time.time() - start > timeout:
             break
         resp = client.chat.completions.create(
@@ -163,7 +170,7 @@ def assemble_report(topic: str, materials: list[dict], facts: dict, analysis: di
 
 def run_pipeline(topic: str, gather_model: str = config.LLM_MODEL_FLASH,
                  model: str = config.LLM_MODEL_PLUS, timeout: int = 300,
-                 progress=None, out_dir: Path | None = None) -> dict:
+                 progress=None, out_dir: Path | None = None, cancelled=None) -> dict:
     """执行完整分析流水线（资料收集→研究员→分析师→审查员→报告），返回结果字典。
 
     progress 为可选回调，签名：progress(message: str, fraction: float | None)。
@@ -180,28 +187,41 @@ def run_pipeline(topic: str, gather_model: str = config.LLM_MODEL_FLASH,
             except Exception:
                 pass
 
+    def _check() -> None:
+        if cancelled is not None and cancelled():
+            raise PipelineCancelled("任务已被用户取消")
+
     _report(f"[1/5] 资料收集（模型：{gather_model}）", 0.05)
-    materials = gather_materials(client, tracker, gather_model, tools, topic, timeout)
+    _check()
+    materials = gather_materials(client, tracker, gather_model, tools, topic, timeout, cancelled)
     if not materials:
         raise RuntimeError("未收集到可用材料，任务中止。请换个课题或稍后再试。")
+    _check()
     _report(f"已收集 {len(materials)} 篇材料", 0.3)
 
     _report("[2/5] 研究员提炼事实…", 0.4)
+    _check()
     facts = run_researcher(client, tracker, model, topic, materials)
+    _check()
 
     _report("[3/5] 分析师竞争态势分析…", 0.6)
+    _check()
     analysis = run_analyst(client, tracker, model, topic, _as_list(facts, "facts"))
+    _check()
 
     _report("[4/5] 审查员证据核验…", 0.75)
+    _check()
     review = run_reviewer(client, tracker, model, topic, analysis, _as_list(facts, "facts"))
     rounds = 0
     while review.get("overall") == "revise" and rounds < MAX_REVISION_ROUNDS:
         rounds += 1
+        _check()
         _report(f"[审查] 第 {rounds} 轮修正：{review.get('feedback', '')}", 0.75 + 0.06 * rounds)
         analysis = run_analyst(client, tracker, model, topic, _as_list(facts, "facts"),
                                feedback=review.get("feedback"))
         review = run_reviewer(client, tracker, model, topic, analysis, _as_list(facts, "facts"))
 
+    _check()
     _report("[5/5] 生成报告并写入长期记忆…", 0.9)
     report_md = assemble_report(topic, materials, facts, analysis, review, model, tracker)
     reports_dir = out_dir or REPORTS_DIR
