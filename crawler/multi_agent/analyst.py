@@ -8,10 +8,11 @@ from ..agent.llm import chat_json
 from . import prompts
 
 
-def run_analyst(client, tracker, model: str, topic: str, facts: list[dict], feedback: str | None = None):
+def run_analyst(client, tracker, model: str, topic: str, facts: list[dict],
+                feedback: str | None = None, domain: str = "其他"):
     payload = json.dumps({"topic": topic, "facts": facts}, ensure_ascii=False)
     messages = [
-        {"role": "system", "content": prompts.ANALYST_SYSTEM},
+        {"role": "system", "content": prompts.analyst_system(domain)},
         {"role": "user", "content": f"分析主题：{topic}\n\n研究员提炼的事实：\n{payload}"},
     ]
     if feedback:

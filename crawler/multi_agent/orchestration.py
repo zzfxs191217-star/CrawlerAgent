@@ -17,7 +17,7 @@ from pathlib import Path
 from .. import config
 from ..agent.llm import UsageTracker, create_client
 from ..tools import execute_tool, get_tool_specs
-from ..tools.search import DOMAIN_TERMS, _extract_terms
+from ..tools.search import DOMAIN_TERMS, _extract_terms, domain_of
 from . import prompts
 from .analyst import run_analyst
 from .researcher import run_researcher
@@ -138,7 +138,7 @@ def _as_list(data: dict, key: str) -> list:
 
 
 def assemble_report(topic: str, materials: list[dict], facts: dict, analysis: dict,
-                    review: dict, model: str, tracker: UsageTracker) -> str:
+                    review: dict, model: str, tracker: UsageTracker, domain: str = "其他") -> str:
     facts_list = _as_list(facts, "facts")
     conclusions = _as_list(analysis, "conclusions")
     swot = analysis.get("swot", {}) if isinstance(analysis.get("swot"), dict) else {}
@@ -147,7 +147,7 @@ def assemble_report(topic: str, materials: list[dict], facts: dict, analysis: di
     lines = [
         f"# {topic}",
         "",
-        f"> 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 模型：{model} | {tracker.summary()}",
+        f"> 生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | 模型：{model} | 领域：{domain} | {tracker.summary()}",
         "",
         "## 一、资料清单",
         "",
@@ -244,10 +244,16 @@ def run_pipeline(topic: str, gather_model: str = config.LLM_MODEL_FLASH,
     _check()
     _report(f"已收集 {len(materials)} 篇材料", 0.3)
 
+    domain = domain_of(topic)
+
     _report("[2/5] 研究员提炼事实…", 0.4)
     _check()
-    facts = run_researcher(client, tracker, model, topic, materials)
+    facts = run_researcher(client, tracker, model, topic, materials, domain)
     _check()
+    if not _as_list(facts, "facts"):
+        print("[研究员] 首次提炼为空，重试一次…")
+        facts = run_researcher(client, tracker, model, topic, materials, domain)
+        _check()
     if not _as_list(facts, "facts"):
         raise RuntimeError(
             "研究员未能从材料中提炼出有效事实（材料可能与主题相关性不足）。"
@@ -256,7 +262,7 @@ def run_pipeline(topic: str, gather_model: str = config.LLM_MODEL_FLASH,
 
     _report("[3/5] 分析师竞争态势分析…", 0.6)
     _check()
-    analysis = run_analyst(client, tracker, model, topic, _as_list(facts, "facts"))
+    analysis = run_analyst(client, tracker, model, topic, _as_list(facts, "facts"), domain=domain)
     _check()
 
     _report("[4/5] 审查员证据核验…", 0.75)
@@ -268,12 +274,12 @@ def run_pipeline(topic: str, gather_model: str = config.LLM_MODEL_FLASH,
         _check()
         _report(f"[审查] 第 {rounds} 轮修正：{review.get('feedback', '')}", 0.75 + 0.06 * rounds)
         analysis = run_analyst(client, tracker, model, topic, _as_list(facts, "facts"),
-                               feedback=review.get("feedback"))
+                               feedback=review.get("feedback"), domain=domain)
         review = run_reviewer(client, tracker, model, topic, analysis, _as_list(facts, "facts"))
 
     _check()
     _report("[5/5] 生成报告并写入长期记忆…", 0.9)
-    report_md = assemble_report(topic, materials, facts, analysis, review, model, tracker)
+    report_md = assemble_report(topic, materials, facts, analysis, review, model, tracker, domain)
     reports_dir = out_dir or REPORTS_DIR
     reports_dir.mkdir(parents=True, exist_ok=True)
     slug = re.sub(r"[^\w\u4e00-\u9fff]+", "_", topic).strip("_")[:40]
