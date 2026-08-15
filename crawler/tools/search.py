@@ -6,6 +6,8 @@ import concurrent.futures
 import html
 import re
 import xml.etree.ElementTree as ET
+from datetime import datetime
+from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin
 
 import requests
@@ -79,6 +81,9 @@ def _score_title(title: str, desc: str, orig_terms: list[str], expanded_terms: l
     for term in expanded_terms:
         if term.lower() in hay_all:
             score += 0.5
+    # 2-gram/弱词兜底只做召回：没有原词命中时分数封顶 1.0，避免泛匹配排到前面
+    if not matched and score > 1.0:
+        score = 1.0
     return score, matched
 
 
@@ -219,9 +224,41 @@ _COMPANY_PREFIXES = [
 ]
 
 
-def _extract_terms(query: str) -> list[str]:
-    """从课题/关键词中提取候选实体词：按连接词切分，剔除通用修饰语。"""
-    terms: list[str] = []
+# 中英/数字混合边界（如 白敬亭GOODBAI → 白敬亭 + GOODBAI）
+_CJK_LATIN_SPLIT = re.compile(
+    r"(?<=[\u4e00-\u9fff])(?=[A-Za-z0-9])|(?<=[A-Za-z0-9])(?=[\u4e00-\u9fff])"
+)
+
+# 拆出的弱词：2 字中文品类词 + 常见英文泛后缀（只做 +0.5 召回，避免泛匹配虚高）
+_WEAK_SUBTERMS = {
+    "app", "api", "pro", "plus", "max", "mini", "web", "pc", "os",
+    "ai", "vr", "ar", "iq", "tv",
+}
+
+
+def _is_weak_subterm(sub: str) -> bool:
+    if re.fullmatch(r"[\u4e00-\u9fff]{2}", sub):
+        return True
+    return sub.lower() in _WEAK_SUBTERMS
+
+
+def _extract_terms(query: str) -> tuple[list[str], list[str]]:
+    """从课题/关键词中提取实体词，返回（强实体词, 弱词）。
+
+    强词：完整实体/产品名（命中 +3）；弱词：从混合词拆出的品类/泛后缀（命中 +0.5）。
+    示例：豆包大模型 → 豆包/大模型（强）；QQ音乐 → QQ（强）+ 音乐（弱）。
+    """
+    strong: list[str] = []
+    weak: list[str] = []
+
+    def add_strong(t: str) -> None:
+        if len(t) >= 2 and t not in GENERIC_TERMS and t not in strong:
+            strong.append(t)
+
+    def add_weak(t: str) -> None:
+        if len(t) >= 2 and t not in GENERIC_TERMS and t not in weak and t not in strong:
+            weak.append(t)
+
     for part in _SPLIT_RE.split(query):
         p = part
         for phrase in _DROP_PHRASES:
@@ -229,16 +266,103 @@ def _extract_terms(query: str) -> list[str]:
         p = p.strip()
         if len(p) < 2 or p in GENERIC_TERMS:
             continue
-        if p not in terms:
-            terms.append(p)
+        add_strong(p)
         # 公司前缀 + 产品名 → 补一个去掉前缀的实体（如 阿里通义千问 → 通义千问）
         for prefix in _COMPANY_PREFIXES:
             if p.startswith(prefix) and len(p) > len(prefix):
                 rest = p[len(prefix):]
-                if len(rest) >= 2 and rest not in GENERIC_TERMS and rest not in terms:
-                    terms.append(rest)
+                if len(rest) >= 2 and rest not in GENERIC_TERMS and rest not in strong:
+                    strong.append(rest)
                 break
-    return terms
+        # 中英/数字混合边界拆词（如 白敬亭GOODBAI → 白敬亭 + GOODBAI）
+        for sub in _CJK_LATIN_SPLIT.split(p):
+            if len(sub) < 2 or sub == p or sub in GENERIC_TERMS or sub.isdigit():
+                continue
+            if _is_weak_subterm(sub):
+                add_weak(sub)
+            else:
+                add_strong(sub)
+        # 已知领域词切分（如 豆包大模型 → 豆包 + 大模型，提高召回）
+        for known in _KNOWN_SUBTERMS:
+            if known != p and known in p:
+                add_strong(known)
+    return strong, weak
+
+
+# 科技/金融领域词表：用于选题领域判定（domain_of）
+DOMAIN_TERMS: dict[str, set[str]] = {
+    "科技": {
+        "AI", "人工智能", "大模型", "语言模型", "深度学习", "机器学习", "算法",
+        "芯片", "半导体", "算力", "GPU", "CPU", "开源", "云计算", "数据库",
+        "操作系统", "自动驾驶", "无人驾驶", "机器人", "智能", "数字化", "互联网",
+        "软件", "硬件", "手机", "电脑", "笔记本", "服务器", "网络安全", "量子",
+        "元宇宙", "区块链", "豆包", "通义千问", "DeepSeek", "ChatGPT", "文心一言",
+        "Kimi", "Gemini", "Claude", "Llama", "GPT",
+    },
+    "金融": {
+        "融资", "估值", "IPO", "上市", "财报", "营收", "净利润", "股价", "市值",
+        "央行", "降息", "加息", "美联储", "A股", "港股", "美股", "债券", "基金",
+        "银行", "保险", "证券", "信托", "期货", "外汇", "黄金", "利率", "贷款",
+        "存款", "货币", "通胀", "GDP", "CPI", "PMI", "消费", "零售", "房地产",
+        "行情", "牛市", "熊市", "创业板", "科创板", "监管", "证监会", "量化",
+        "公募", "私募", "理财",
+    },
+}
+
+# 专业财经源：金融领域选题时加分
+FINANCE_SOURCES = {"第一财经", "界面新闻", "21财经"}
+
+# 已知中文领域词（科技+金融）：用于中文复合词内的已知词切分（如 豆包大模型 → 豆包 + 大模型）
+_KNOWN_SUBTERMS = {
+    t
+    for t in DOMAIN_TERMS["科技"] | DOMAIN_TERMS["金融"]
+    if re.fullmatch(r"[\u4e00-\u9fff]{2,}", t)
+}
+
+
+def domain_of(query: str) -> str:
+    """按领域词表判断课题所属领域：科技 / 金融 / 综合 / 其他。"""
+    text = query.lower()
+    tech = sum(1 for t in DOMAIN_TERMS["科技"] if t.lower() in text)
+    fin = sum(1 for t in DOMAIN_TERMS["金融"] if t.lower() in text)
+    if tech and fin:
+        return "综合"
+    if tech:
+        return "科技"
+    if fin:
+        return "金融"
+    return "其他"
+
+
+def _parse_date(date_str: str) -> datetime | None:
+    """解析 RSS pubDate 或 YYYY-MM-DD 为 naive datetime，失败返回 None。"""
+    if not date_str:
+        return None
+    s = date_str.strip()
+    m = re.match(r"(\d{4})-(\d{1,2})-(\d{1,2})", s)
+    if m:
+        try:
+            return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return None
+    try:
+        dt = parsedate_to_datetime(s)
+        return dt.replace(tzinfo=None)
+    except Exception:
+        return None
+
+
+def _date_weight(date_str: str) -> float:
+    """日期衰减：7 天内 ×1.2，30 天内 ×1.0，更早 ×0.5；无日期不惩罚。"""
+    dt = _parse_date(date_str)
+    if dt is None:
+        return 1.0
+    days = (datetime.now() - dt).days
+    if days <= 7:
+        return 1.2
+    if days <= 30:
+        return 1.0
+    return 0.5
 
 
 def search_candidates(query: str, count: int = 5) -> tuple[list[dict], list[str]]:
@@ -247,10 +371,13 @@ def search_candidates(query: str, count: int = 5) -> tuple[list[dict], list[str]
     每个候选含：title/url/date/snippet/score/source/matched。
     通用词（市场/竞争/分析…）不参与计分，只有具体产品/实体名命中才算相关。
     """
-    orig_terms = _extract_terms(query)
+    orig_terms, weak_terms = _extract_terms(query)
     if not orig_terms:
         return [], []
     expanded_terms = [t for t in _expand_terms(orig_terms) if t not in orig_terms]
+    for t in weak_terms:
+        if t not in expanded_terms:
+            expanded_terms.append(t)
     limit = max(1, min(int(count), 10))
 
     jobs: list[tuple[str, str, str, dict | None]] = []  # (来源名, url, 类型, 配置)
@@ -291,6 +418,11 @@ def search_candidates(query: str, count: int = 5) -> tuple[list[dict], list[str]
         deduped.append(item)
     results = deduped
     failed = list(dict.fromkeys(failed))
+    domain = domain_of(query)
+    for item in results:
+        if domain == "金融" and item.get("source") in FINANCE_SOURCES:
+            item["score"] = round(item["score"] + 0.5, 2)
+        item["score"] = round(item["score"] * _date_weight(item["date"]), 2)
     results.sort(key=lambda x: (x["score"], x["date"]), reverse=True)
     return results, failed
 

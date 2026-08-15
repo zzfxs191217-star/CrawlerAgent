@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from .tools.search import BROAD_COMPANIES, search_candidates
+from .tools.search import BROAD_COMPANIES, domain_of, search_candidates
 
 # 相关度阈值：原词命中正文 +2 即视为真正相关；仅 2-gram 命中（<2）视为噪音
 RELEVANT_SCORE = 2.0
@@ -17,6 +17,7 @@ RELEVANT_SCORE = 2.0
 
 def check_topic(topic: str, top_k: int = 5) -> dict:
     """预检课题覆盖情况。返回 verdict: ok / warn / none，以及候选与建议。"""
+    domain = domain_of(topic)
     candidates, failed = search_candidates(topic, count=10)
     # 真正相关：分数达标 + 命中具体实体词，且不只在母公司级命中（如“腾讯”）
     relevant = [
@@ -30,7 +31,7 @@ def check_topic(topic: str, top_k: int = 5) -> dict:
     if len(relevant) >= 3:
         verdict = "ok"
         message = (
-            f"✅ 有料：白名单媒体近期找到 {len(candidates)} 条相关候选，"
+            f"✅ 有料（领域：{domain}）：白名单媒体近期找到 {len(candidates)} 条相关候选，"
             f"其中 {len(relevant)} 条真正相关，可以开跑。"
         )
         suggestions = [
@@ -40,7 +41,7 @@ def check_topic(topic: str, top_k: int = 5) -> dict:
     elif len(relevant) >= 1:
         verdict = "warn"
         message = (
-            f"⚠️ 偏少：找到 {len(candidates)} 条候选，但真正相关的只有 {len(relevant)} 条，"
+            f"⚠️ 偏少（领域：{domain}）：找到 {len(candidates)} 条候选，但真正相关的只有 {len(relevant)} 条，"
             "可能只能覆盖部分角度。"
         )
         suggestions = [
@@ -51,20 +52,28 @@ def check_topic(topic: str, top_k: int = 5) -> dict:
     else:
         verdict = "none"
         message = (
-            "❌ 没料：现有白名单媒体（科技/金融向）近期基本不覆盖这个话题，"
+            f"❌ 没料（领域：{domain}）：现有白名单媒体（科技/金融向）近期基本不覆盖这个话题，"
             "跑完整分析大概率拿不到事实。"
         )
         suggestions = [
             "换更受媒体关注的选题（有热点的方向更容易抓到信息）。",
             "把 3 个对象对比拆成 2 个对象，成功率更高。",
             "用官方产品名（如「网易云音乐」而不是「网抑云」）重试。",
-            "混合中英文复合词（如「白敬亭GOODBAI」）建议拆成纯实体名分别搜（「白敬亭」/「GOODBAI」）。",
+            "混合中英文复合词（如「豆包大模型」）会自动拆词检索，仍没料说明话题近期确实没报道。",
         ]
+    domain_tips = {
+        "科技": "科技类选题建议用「官方产品名+技术关键词」（如 豆包大模型、ChatGPT API 定价）。",
+        "金融": "金融类选题建议带上具体指标词（财报/融资/估值/监管），财经源（第一财经/界面/21财经）覆盖更好。",
+        "综合": "科技+金融混合选题，建议拆成两个角度分别搜。",
+        "其他": "未识别到科技/金融领域词，可能是冷门或太泛的选题，建议换更具体的产品/公司名。",
+    }
+    suggestions.append(domain_tips[domain])
 
     if failed:
         message += f"（{len(failed)} 个来源暂不可用：{', '.join(failed)}）"
     return {
         "verdict": verdict,
+        "domain": domain,
         "message": message,
         "candidates": top,
         "total": len(candidates),
