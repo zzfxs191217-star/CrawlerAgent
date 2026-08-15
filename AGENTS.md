@@ -40,6 +40,7 @@
 9. 报告导出（V3.2）：`crawler/export.py` 把 Markdown 报告渲染为 PDF（reportlab，中文字体回退 STSong-Light）与 Word（python-docx），CLI `--export` + Web 界面按钮
 10. 验收修复（V3.2，D-012）：正文抽取优先内容容器；表格单元格 `|` 转义全角；PDF 表格行归一化+等分列宽；RSS 候选按相关度打分排序
 11. 选题助手（V3.3，D-013）：`topic_check.py` 实体词提取 + 相关度判定（排除通用词/母公司噪音）；Web「选题助手」页签；`run_pipeline` 失败时输出诊断建议
+12. 数据源扩展（方向 C，D-014）：发现层新增 RSS——IT之家/机核/Solidot；内容层白名单新增——IT之家/机核/Solidot/娱乐资本论/品牌星球；已实测不可用不接入（机器之心付费、亿欧 202、DoNews/品玩 404、晚点 SSL、三声废弃、36氪/虎嗅反爬）
 
 ## 五、工作约定
 
