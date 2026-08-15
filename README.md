@@ -69,7 +69,7 @@ uv run python scripts/connectivity_test.py
 如果看到模型返回一段自我介绍文字，说明环境配置成功。
 
 ### 第五步：跑第一个完整分析
-- **新手推荐（Web 界面）**：运行 `uv run python -m crawler.webui`，浏览器打开 `http://127.0.0.1:7860`，输入课题点“开始分析”，3–5 分钟后在页面直接查看、下载，并可导出 PDF/Word。
+- **新手推荐（Web 界面）**：运行 `uv run python -m crawler.webui`，浏览器打开 `http://127.0.0.1:7860`，输入课题点“开始分析”，3–5 分钟后在页面直接查看、下载，并可导出 PDF/Word（建议先用「选题助手」页签预检成功率）。
 - 命令行方式：运行 `uv run python -m crawler.multi_agent.orchestration --topic "分析字节跳动旗下豆包与阿里通义千问的竞争态势"`，结束后到 `reports/` 文件夹里打开生成的 `.md` 文件。
 
 ## 常用命令速查
@@ -83,6 +83,7 @@ uv run python scripts/connectivity_test.py
 | `uv run python -m crawler.memory.store --index-reports` | 把历史报告加入长期记忆库 |
 | `uv run python -m crawler.memory.store --query "检索问题"` | 检索长期记忆 |
 | `uv run python -m crawler.export --file reports/报告.md --fmt pdf,docx` | 把报告导出为 PDF/Word |
+| `uv run python -m crawler.topic_check --topic "课题"` | 选题预检：先看这个话题有没有料 |
 
 ## 项目结构（给想深入看代码的人）
 
@@ -108,6 +109,12 @@ CrawlerAgent/
 - [x] V0.0 → V1.0 → V2.0 → V3.0 → V3.1 Web 界面 → V3.2 报告导出 PDF/Word
 - 后续规划：定时监控、API 化（详见 `docs/decisions.md`）
 
+## 选题技巧（提高成功率）
+
+- **热点优先**：选最近 1-2 周媒体持续报道的方向，更容易抓到信息。
+- **2 个对象对比**：先做 A vs B，别一次对比 3 个产品（例如 QQ音乐/网易云/汽水音乐容易失败）。
+- **先预检再开跑**：用 Web 界面的「选题助手」页签，1 分钟就知道有没有料。
+- 完整方法论见 `docs/topic_guide.md`。
 ## 常见问题（FAQ）
 
 - **提示“请先配置 .env”？** → 密钥没配好，回到第三步检查。

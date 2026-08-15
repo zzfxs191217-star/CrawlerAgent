@@ -200,7 +200,15 @@ def run_pipeline(topic: str, gather_model: str = config.LLM_MODEL_FLASH,
     _check()
     materials = gather_materials(client, tracker, gather_model, tools, topic, timeout, cancelled)
     if not materials:
-        raise RuntimeError("未收集到可用材料，任务中止。请换个课题或稍后再试。")
+        diag = ""
+        try:
+            from ..topic_check import check_topic
+
+            info = check_topic(topic)
+            diag = "\n" + info["message"] + "\n建议：\n- " + "\n- ".join(info["suggestions"])
+        except Exception:
+            diag = "\n建议用「选题助手」预检后再试，或换一个更受媒体关注的话题。"
+        raise RuntimeError("未收集到可用材料，任务中止。" + diag)
     _check()
     _report(f"已收集 {len(materials)} 篇材料", 0.3)
 

@@ -103,10 +103,63 @@ def _match_items(xml_text: str, orig_terms: list[str], expanded_terms: list[str]
     return items[:limit]
 
 
-def run(query: str, count: int = 5) -> str:
-    orig_terms = [t for t in re.split(r"[\s,，、;；]+", query) if t]
+GENERIC_TERMS = {
+    "市场", "竞争", "分析", "对比", "态势", "竞争态势", "最新", "动态", "情况",
+    "现状", "趋势", "前景", "排名", "市场份额", "用户", "产品", "公司", "行业",
+    "相关", "新闻", "报道", "文章", "评价", "口碑", "如何", "为什么", "怎么样",
+    "区别", "差异", "哪个", "谁", "好", "份额",
+}
+
+
+_SPLIT_RE = re.compile(r"[\s,，、;；/]+|与|和|及|旗下|的|vs\.?|VS\.?")
+_DROP_PHRASES = [
+    "分析", "关于", "针对", "进行", "了解", "关注", "对比",
+    "竞争态势", "态势", "现状", "情况", "前景", "趋势", "排名", "竞争",
+    "最新", "动态", "市场", "用户", "产品", "公司", "行业", "文章", "新闻",
+]
+
+# 常见母公司名：单独命中时不足以证明话题相关（例如“腾讯”常出现在任何商业新闻里）
+BROAD_COMPANIES = {
+    "腾讯", "字节", "字节跳动", "阿里", "阿里巴巴", "阿里云", "百度", "华为",
+    "小米", "美团", "京东", "网易", "360", "快手", "哔哩哔哩", "B站",
+}
+_COMPANY_PREFIXES = [
+    "字节跳动", "阿里巴巴", "阿里云", "腾讯", "阿里", "字节",
+    "百度", "华为", "小米", "美团", "京东", "网易",
+]
+
+
+def _extract_terms(query: str) -> list[str]:
+    """从课题/关键词中提取候选实体词：按连接词切分，剔除通用修饰语。"""
+    terms: list[str] = []
+    for part in _SPLIT_RE.split(query):
+        p = part
+        for phrase in _DROP_PHRASES:
+            p = p.replace(phrase, "")
+        p = p.strip()
+        if len(p) < 2 or p in GENERIC_TERMS:
+            continue
+        if p not in terms:
+            terms.append(p)
+        # 公司前缀 + 产品名 → 补一个去掉前缀的实体（如 阿里通义千问 → 通义千问）
+        for prefix in _COMPANY_PREFIXES:
+            if p.startswith(prefix) and len(p) > len(prefix):
+                rest = p[len(prefix):]
+                if len(rest) >= 2 and rest not in GENERIC_TERMS and rest not in terms:
+                    terms.append(rest)
+                break
+    return terms
+
+
+def search_candidates(query: str, count: int = 5) -> tuple[list[dict], list[str]]:
+    """在白名单 RSS 中按关键词检索，返回（按相关度排序的候选列表, 不可用来源列表）。
+
+    每个候选含：title/url/date/snippet/score/source/matched。
+    通用词（市场/竞争/分析…）不参与计分，只有具体产品/实体名命中才算相关。
+    """
+    orig_terms = _extract_terms(query)
     if not orig_terms:
-        return "关键词为空，请提供有效关键词。"
+        return [], []
     expanded_terms = [t for t in _expand_terms(orig_terms) if t not in orig_terms]
     limit = max(1, min(int(count), 10))
 
@@ -125,11 +178,17 @@ def run(query: str, count: int = 5) -> str:
             except Exception:
                 failed.append(name)
 
+    results.sort(key=lambda x: (x["score"], x["date"]), reverse=True)
+    return results, failed
+
+
+def run(query: str, count: int = 5) -> str:
+    if not query or not query.strip():
+        return "关键词为空，请提供有效关键词。"
+    results, failed = search_candidates(query, count)
     if not results:
         note = f"（{len(failed)} 个来源暂时不可用：{', '.join(failed)}）" if failed else ""
         return f"在可信媒体中没有搜到与“{query}”相关的文章，请换关键词试试。{note}"
-
-    results.sort(key=lambda x: (x["score"], x["date"]), reverse=True)
     lines = []
     for i, item in enumerate(results[:20], start=1):
         lines.append(

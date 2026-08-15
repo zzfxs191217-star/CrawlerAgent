@@ -19,6 +19,15 @@ from .multi_agent.orchestration import PipelineCancelled, run_pipeline
 # 取消标志：点击“取消任务”置位，流水线在步骤间轮询后抛出 PipelineCancelled。
 _cancel_event = threading.Event()
 
+TOPIC_GUIDE_MD = """### 选题指南（提高成功率）
+
+1. **热点优先**：选最近 1-2 周有媒体持续报道的方向，白名单媒体（科技/AI 向）更容易抓到。
+2. **2 个对象对比**：先做 A vs B，成功率远高于一次对比 3 个产品（例如 QQ音乐/网易云/汽水音乐一次对比）。
+3. **用官方产品名**：如「网易云音乐」而不是「网抑云」；别把多个产品挤在一个关键词里。
+4. **先预检再开跑**：点「预检选题」，1 分钟就知道有没有料，别直接跑 5 分钟完整分析。
+5. **失败常见原因**：数据源不覆盖该领域（音乐/文娱/消费类）、话题过冷、对象过多、命名不规范。
+"""
+
 
 def run_analysis(topic: str, gather_model: str, model: str, progress=gr.Progress()):
     """执行完整分析流水线，返回报告 Markdown、文件路径、Token 用量与可下载文件。"""
@@ -96,6 +105,21 @@ def search_memory(query: str, top_k: int = 5):
     return "\n\n".join(lines)
 
 
+def precheck_topic(topic: str) -> str:
+    """选题预检：判断课题在白名单媒体中有没有料。"""
+    from .topic_check import check_topic, format_report
+
+    topic = (topic or "").strip()
+    if not topic:
+        raise gr.Error("请输入课题或关键词，例如：豆包 通义千问")
+    return format_report(check_topic(topic))
+
+
+def fill_topic(topic: str) -> str:
+    """把预检通过的课题填入「分析报告」页签。"""
+    return (topic or "").strip()
+
+
 def build_demo() -> gr.Blocks:
     with gr.Blocks(title="CrawlerAgent 竞品情报分析") as demo:
         gr.Markdown(
@@ -153,6 +177,19 @@ def build_demo() -> gr.Blocks:
             search_btn = gr.Button("检索", variant="primary")
             result_md = gr.Markdown(label="检索结果")
             search_btn.click(search_memory, inputs=[query, top_k], outputs=[result_md])
+        with gr.Tab("选题助手"):
+            gr.Markdown(TOPIC_GUIDE_MD)
+            ptopic = gr.Textbox(
+                label="想分析的课题",
+                placeholder="例如：分析字节跳动旗下豆包与阿里通义千问的竞争态势",
+                lines=2,
+            )
+            with gr.Row():
+                precheck_btn = gr.Button("预检选题", variant="primary")
+                go_btn = gr.Button("有料？去生成报告", variant="secondary")
+            precheck_out = gr.Markdown(label="预检结果")
+            precheck_btn.click(precheck_topic, inputs=[ptopic], outputs=[precheck_out])
+            go_btn.click(fill_topic, inputs=[ptopic], outputs=[topic])
         gr.Markdown("模型：qwen3.7-flash（收集/整理）+ qwen3.5-omni-plus（分析/审查）｜长期记忆：text-embedding-v3")
     return demo
 

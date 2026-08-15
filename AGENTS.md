@@ -25,6 +25,7 @@
 - 阶段五 V3.0：长期记忆/知识库 RAG——分块向量化 + 检索工具 + 报告自动入库（`crawler/memory/`）
 - 阶段六 V3.1：Web 界面（Gradio `crawler/webui.py`，CLI/Web 共用 `run_pipeline` 流水线）
 - 阶段七 V3.2：报告导出 PDF/Word（`crawler/export.py`，CLI `--export` + Web 按钮）
+- 阶段八 V3.3：选题助手——预检课题覆盖情况 + Web 页签 + 失败诊断（`crawler/topic_check.py`、`docs/topic_guide.md`）
 
 ## 四、已确认的关键设计（决策详情见 `docs/decisions.md`）
 
@@ -38,6 +39,7 @@
 8. Web 界面（V3.1）：`crawler/webui.py` 本地服务（127.0.0.1:7860），密钥只留服务端；`run_pipeline` 支持进度回调与取消（`PipelineCancelled`），界面含取消任务/下载报告/模型选择
 9. 报告导出（V3.2）：`crawler/export.py` 把 Markdown 报告渲染为 PDF（reportlab，中文字体回退 STSong-Light）与 Word（python-docx），CLI `--export` + Web 界面按钮
 10. 验收修复（V3.2，D-012）：正文抽取优先内容容器；表格单元格 `|` 转义全角；PDF 表格行归一化+等分列宽；RSS 候选按相关度打分排序
+11. 选题助手（V3.3，D-013）：`topic_check.py` 实体词提取 + 相关度判定（排除通用词/母公司噪音）；Web「选题助手」页签；`run_pipeline` 失败时输出诊断建议
 
 ## 五、工作约定
 
@@ -60,3 +62,4 @@
 - 记忆库检索：`uv run python -m crawler.memory.store --query "问题"`
 - Web 界面：`uv run python -m crawler.webui`（浏览器打开 http://127.0.0.1:7860）
 - 报告导出：`uv run python -m crawler.export --file reports/xx.md --fmt pdf,docx`
+- 选题预检：`uv run python -m crawler.topic_check --topic "课题"`
