@@ -201,6 +201,14 @@ def main() -> int:
     report_path = REPORTS_DIR / f"{slug}_{datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
     report_path.write_text(report, encoding="utf-8")
 
+    try:
+        from ..memory.store import KnowledgeStore
+
+        added = KnowledgeStore().add_document(args.topic, report, "report")
+        print(f"已加入长期记忆库（{added} 个片段）")
+    except Exception as exc:
+        print(f"记忆库入库失败（不影响报告）：{exc}")
+
     print(f"\n报告已生成：{report_path}")
     print(tracker.summary())
     print("\n报告预览：")

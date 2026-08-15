@@ -9,6 +9,7 @@
 - [x] 阶段二（V0.0）：单工具调用闭环（M1 通过：抓取百度标题）
 - [x] 阶段三（V1.0）：ReAct 多步推理 + 工作台账记忆 + 用户可中断（M2 通过：搜索→抓取→总结）
 - [x] 阶段四（V2.0）：多角色协作 + 结构化报告（M3 通过：豆包 vs 通义千问报告）
+- [x] 阶段五（V3.0）：长期记忆/知识库 RAG——报告自动入库 + `search_knowledge` 检索复用
 
 ## 快速开始
 
@@ -18,6 +19,8 @@
 4. `uv run python -m crawler.agent.loop_v0`（V0.0 交互式工具调用）
 5. `uv run python -m crawler.agent.loop_v1`（V1.0 ReAct 多步推理）
 6. `uv run python -m crawler.multi_agent.orchestration --topic "分析课题"`（V2.0 多角色报告）
+7. `uv run python -m crawler.memory.store --index-reports`（历史报告入库）
+8. `uv run python -m crawler.memory.store --query "检索问题"`（知识库检索）
 
 ## 文档
 

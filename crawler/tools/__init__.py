@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from . import search, time_tool, web
+from . import knowledge, search, time_tool, web
 
 _TOOLS = {
     "get_current_time": time_tool,
     "fetch_web_page": web,
     "search_news": search,
+    "search_knowledge": knowledge,
 }
 
 

@@ -22,15 +22,17 @@
 - 阶段二 V0.0：工具调用闭环（`crawler/tools/` + `crawler/agent/loop_v0.py`）
 - 阶段三 V1.0：ReAct 多步推理 + 工作台账记忆 + 用户可中断（`crawler/agent/loop_v1.py`、`memory.py`）
 - 阶段四 V2.0：研究员/分析师/审查员多角色协作 + Markdown 报告（`crawler/multi_agent/`）
+- 阶段五 V3.0：长期记忆/知识库 RAG——分块向量化 + 检索工具 + 报告自动入库（`crawler/memory/`）
 
 ## 四、已确认的关键设计（决策详情见 `docs/decisions.md`）
 
-1. 来源三层：发现层（Bing News RSS）→ 内容层（白名单域名抓正文）→ 校验层（结论挂原文片段+URL）
+1. 来源三层：发现层（白名单媒体 RSS 关键词检索，D-007）→ 内容层（白名单域名抓正文）→ 校验层（结论挂原文片段+URL）
 2. 原始正文不进主对话：抓取 → 轻量摘要 → 结构化条目（URL/标题/日期/关键事实/可引用原句）
 3. 工作台账 JSON 落盘 = 断点续跑（V1.0 实现）
 4. 模型分层 + 每次调用记录 token 用量
 5. 交互模式：阶段化 + 可中断（每阶段结束询问用户：继续/换方向/补充来源/跳过）
 6. 上下文纪律：主循环只保留结构化条目 + 台账；原始网页和超长文本走单次摘要调用
+7. 长期记忆（V3.0）：`crawler/memory/` 本地知识库，报告自动入库，智能体可用 `search_knowledge` 工具检索历史结论
 
 ## 五、工作约定
 
@@ -49,3 +51,5 @@
 - V2.0 多角色报告：`uv run python -m crawler.multi_agent.orchestration --topic "分析课题"`
 - 国内网络检查：`uv run python scripts/check_network.py`
 - GitHub 参考检索：`uv run python scripts/gh_find.py 关键词`
+- 记忆库入库：`uv run python -m crawler.memory.store --index-reports`
+- 记忆库检索：`uv run python -m crawler.memory.store --query "问题"`
