@@ -64,3 +64,9 @@
 - 决策：`run_pipeline` 增加 `cancelled` 回调（配合 `PipelineCancelled` 异常），资料收集循环与各阶段间轮询取消标志；Web 界面增加“取消任务”按钮、报告下载（`gr.File`）、收集/分析模型下拉选择。
 - 理由：长任务需要可中断（对应规划书“智能体陷入无限循环”风险的兜底之一）；下载与选模型提升实际可用性。
 - 备注：取消为步骤间生效（单次 LLM 调用不打断）；CLI 行为不受影响。
+## D-011 V3.2 报告导出：PDF / Word
+
+- 日期：2026-08-15
+- 决策：新增 `crawler/export.py`：轻量 Markdown 块解析（标题/段落/引用/有序无序列表/表格/加粗/链接）→ reportlab 渲染 PDF（优先系统微软雅黑，缺失回退内置 STSong-Light CID 字体）+ python-docx 渲染 Word（中文字体微软雅黑，链接为可点击超链接）；CLI 增加 `--export pdf,docx`，Web 界面增加“导出 PDF/Word”按钮。
+- 理由：报告交付常用格式；PDF/Word 纯本地生成、零外部服务依赖；PDF 用系统字体避免在仓库捆绑大字体文件。
+- 备注：PDF 链接以蓝色下划线呈现；Word 链接可点击跳转。

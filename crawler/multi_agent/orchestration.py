@@ -260,6 +260,7 @@ def main() -> int:
     parser.add_argument("--model", default=config.LLM_MODEL_PLUS, help="分析/审查模型（默认 omni-plus）")
     parser.add_argument("--gather-model", default=config.LLM_MODEL_FLASH, help="资料收集模型（默认 flash）")
     parser.add_argument("--timeout", type=int, default=300, help="资料收集超时秒数")
+    parser.add_argument("--export", default="", help="报告导出格式（逗号分隔）：pdf/docx，例如 --export pdf,docx")
     args = parser.parse_args()
 
     try:
@@ -267,6 +268,16 @@ def main() -> int:
     except RuntimeError as exc:
         print(exc)
         return 1
+
+    if args.export:
+        from ..export import export_report
+        fmts = [f.strip() for f in args.export.split(",") if f.strip()]
+        try:
+            exported = export_report(result["report"], result["report_path"].stem, REPORTS_DIR, fmts=fmts)
+            for fmt, path_out in exported.items():
+                print(f"已导出 {fmt.upper()}：{path_out}")
+        except Exception as exc:
+            print(f"导出失败（不影响报告）：{exc}")
 
     print(f"\n{result['tracker'].summary()}")
     print("\n报告预览：")

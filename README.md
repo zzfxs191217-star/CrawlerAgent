@@ -69,7 +69,7 @@ uv run python scripts/connectivity_test.py
 如果看到模型返回一段自我介绍文字，说明环境配置成功。
 
 ### 第五步：跑第一个完整分析
-- **新手推荐（Web 界面）**：运行 `uv run python -m crawler.webui`，浏览器打开 `http://127.0.0.1:7860`，输入课题点“开始分析”，3–5 分钟后在页面直接查看并下载报告。
+- **新手推荐（Web 界面）**：运行 `uv run python -m crawler.webui`，浏览器打开 `http://127.0.0.1:7860`，输入课题点“开始分析”，3–5 分钟后在页面直接查看、下载，并可导出 PDF/Word。
 - 命令行方式：运行 `uv run python -m crawler.multi_agent.orchestration --topic "分析字节跳动旗下豆包与阿里通义千问的竞争态势"`，结束后到 `reports/` 文件夹里打开生成的 `.md` 文件。
 
 ## 常用命令速查
@@ -82,6 +82,7 @@ uv run python scripts/connectivity_test.py
 | `uv run python -m crawler.multi_agent.orchestration --topic "你的分析课题"` | 命令行一键生成完整分析报告 |
 | `uv run python -m crawler.memory.store --index-reports` | 把历史报告加入长期记忆库 |
 | `uv run python -m crawler.memory.store --query "检索问题"` | 检索长期记忆 |
+| `uv run python -m crawler.export --file reports/报告.md --fmt pdf,docx` | 把报告导出为 PDF/Word |
 
 ## 项目结构（给想深入看代码的人）
 
@@ -104,8 +105,8 @@ CrawlerAgent/
 
 ## 开发进度
 
-- [x] V0.0 工具调用闭环 → V1.0 ReAct 多步推理 → V2.0 多角色协作报告 → V3.0 长期记忆知识库 → V3.1 Web 界面
-- 后续规划：报告导出 PDF/Word、定时监控、API 化（详见 `docs/decisions.md`）
+- [x] V0.0 → V1.0 → V2.0 → V3.0 → V3.1 Web 界面 → V3.2 报告导出 PDF/Word
+- 后续规划：定时监控、API 化（详见 `docs/decisions.md`）
 
 ## 常见问题（FAQ）
 

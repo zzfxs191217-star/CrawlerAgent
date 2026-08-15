@@ -1,4 +1,4 @@
-"""CrawlerAgent Web 界面（V3.1）：浏览器里运行完整分析、查看报告、检索知识库。
+"""CrawlerAgent Web 界面（V3.1）：浏览器里运行完整分析、查看报告、导出 PDF/Word、检索知识库。
 
 用法：
     uv run python -m crawler.webui
@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 
 import gradio as gr
 
@@ -54,6 +55,29 @@ def run_analysis(topic: str, gather_model: str, model: str, progress=gr.Progress
 def request_cancel() -> str:
     _cancel_event.set()
     return "已请求取消：当前步骤结束后会停止，约 3–5 秒内生效。"
+
+
+def export_report_file(report_path: str, fmt: str) -> tuple[str, str]:
+    """把已生成的报告导出为 PDF/Word，返回（文件路径, 状态文字）。"""
+    from .export import export_report
+
+    report_path = (report_path or "").strip()
+    if not report_path:
+        raise gr.Error("请先运行一次分析生成报告，再导出文件")
+    p = Path(report_path)
+    if not p.exists():
+        raise gr.Error(f"报告文件不存在：{report_path}")
+    exported = export_report(p.read_text(encoding="utf-8"), p.stem, p.parent, fmts=[fmt])
+    f = exported[fmt]
+    return str(f), f"已导出 {fmt.upper()}：{f}"
+
+
+def export_pdf(report_path: str) -> tuple[str, str]:
+    return export_report_file(report_path, "pdf")
+
+
+def export_docx(report_path: str) -> tuple[str, str]:
+    return export_report_file(report_path, "docx")
 
 
 def search_memory(query: str, top_k: int = 5):
@@ -104,14 +128,21 @@ def build_demo() -> gr.Blocks:
             with gr.Row():
                 path_out = gr.Textbox(label="报告文件路径", interactive=False, lines=1)
                 tokens_out = gr.Textbox(label="Token 用量", interactive=False, lines=1)
-            report_file = gr.File(label="下载报告", interactive=False)
+            report_file = gr.File(label="下载 Markdown 报告", interactive=False)
             run_btn.click(
                 run_analysis,
                 inputs=[topic, gather_model, model],
                 outputs=[report_md, path_out, tokens_out, report_file],
             )
             cancel_btn.click(request_cancel, outputs=[cancel_status])
-            gr.Markdown("> 提示：一次完整分析约需 3–5 分钟；「取消任务」会在当前步骤结束后停止。")
+            with gr.Row():
+                pdf_btn = gr.Button("导出 PDF")
+                docx_btn = gr.Button("导出 Word")
+            export_file = gr.File(label="导出文件", interactive=False)
+            export_status = gr.Textbox(label="导出状态", interactive=False, lines=1)
+            pdf_btn.click(export_pdf, inputs=[path_out], outputs=[export_file, export_status])
+            docx_btn.click(export_docx, inputs=[path_out], outputs=[export_file, export_status])
+            gr.Markdown("> 提示：一次完整分析约需 3–5 分钟；「取消任务」会在当前步骤结束后停止；导出前请先生成报告。")
         with gr.Tab("知识库检索"):
             query = gr.Textbox(
                 label="检索问题",

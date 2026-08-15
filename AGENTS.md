@@ -24,6 +24,7 @@
 - 阶段四 V2.0：研究员/分析师/审查员多角色协作 + Markdown 报告（`crawler/multi_agent/`）
 - 阶段五 V3.0：长期记忆/知识库 RAG——分块向量化 + 检索工具 + 报告自动入库（`crawler/memory/`）
 - 阶段六 V3.1：Web 界面（Gradio `crawler/webui.py`，CLI/Web 共用 `run_pipeline` 流水线）
+- 阶段七 V3.2：报告导出 PDF/Word（`crawler/export.py`，CLI `--export` + Web 按钮）
 
 ## 四、已确认的关键设计（决策详情见 `docs/decisions.md`）
 
@@ -35,6 +36,7 @@
 6. 上下文纪律：主循环只保留结构化条目 + 台账；原始网页和超长文本走单次摘要调用
 7. 长期记忆（V3.0）：`crawler/memory/` 本地知识库，报告自动入库，智能体可用 `search_knowledge` 工具检索历史结论
 8. Web 界面（V3.1）：`crawler/webui.py` 本地服务（127.0.0.1:7860），密钥只留服务端；`run_pipeline` 支持进度回调与取消（`PipelineCancelled`），界面含取消任务/下载报告/模型选择
+9. 报告导出（V3.2）：`crawler/export.py` 把 Markdown 报告渲染为 PDF（reportlab，中文字体回退 STSong-Light）与 Word（python-docx），CLI `--export` + Web 界面按钮
 
 ## 五、工作约定
 
@@ -56,3 +58,4 @@
 - 记忆库入库：`uv run python -m crawler.memory.store --index-reports`
 - 记忆库检索：`uv run python -m crawler.memory.store --query "问题"`
 - Web 界面：`uv run python -m crawler.webui`（浏览器打开 http://127.0.0.1:7860）
+- 报告导出：`uv run python -m crawler.export --file reports/xx.md --fmt pdf,docx`
