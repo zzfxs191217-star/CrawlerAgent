@@ -17,7 +17,7 @@ from pathlib import Path
 from .. import config
 from ..agent.llm import UsageTracker, create_client
 from ..tools import execute_tool, get_tool_specs
-from ..tools.search import DOMAIN_TERMS, _extract_terms, domain_of
+from ..tools.search import _extract_terms, _partition_terms, domain_of
 from . import prompts
 from .analyst import run_analyst
 from .researcher import run_researcher
@@ -115,8 +115,7 @@ def gather_materials(client, tracker, model: str, tools: list[dict], topic: str,
                     # 无核心实体时退回任意强词，避免早报/汇总类泛命中文章混入
                     strong, _ = _extract_terms(topic)
                     if strong:
-                        domain_words = {t for terms in DOMAIN_TERMS.values() for t in terms}
-                        core = [t for t in strong if t.lower() not in domain_words]
+                        core, _ = _partition_terms(strong)
                         required = core or strong
                         hay = (title + " " + body).lower()
                         if not any(t.lower() in hay for t in required):

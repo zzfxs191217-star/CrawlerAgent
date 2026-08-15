@@ -50,21 +50,37 @@ RSS_FEEDS = {
 # 从文章链接中提取标题参与关键词检索。title_selectors 优先；title_attr 直接取锚点属性。
 LIST_PAGES: dict[str, dict] = {
     "第一财经": {
-        "pages": ["https://www.yicai.com/"],
+        # 桌面端导航为 JS 驱动，仅 /news/ 新闻列表有静态文章链接（/brief/ 快讯为前端渲染无静态链接）
+        "pages": ["https://www.yicai.com/", "https://www.yicai.com/news/"],
         "link_match": ["/news/"],
         "title_selectors": ["h2"],
         "date_selectors": [],
         "drop_date_spans": False,
     },
     "界面新闻": {
-        "pages": ["https://www.jiemian.com/"],
+        # 频道页（D-022 探测验证）：宏观/股市/科技/金融/证券
+        "pages": [
+            "https://www.jiemian.com/",
+            "https://www.jiemian.com/lists/174.html",   # 宏观
+            "https://www.jiemian.com/lists/418.html",   # 股市
+            "https://www.jiemian.com/lists/65.html",    # 科技
+            "https://www.jiemian.com/lists/9.html",     # 金融
+            "https://www.jiemian.com/lists/112.html",   # 证券
+        ],
         "link_match": ["/article/"],
         "title_selectors": ["p"],
         "date_selectors": [],
         "drop_date_spans": False,
     },
     "21财经": {
-        "pages": ["https://www.21jingji.com/"],
+        # 频道页（D-022 探测验证）：宏观 politics/金融 finance/证券 capital/公司 company
+        "pages": [
+            "https://www.21jingji.com/",
+            "https://www.21jingji.com/channel/politics/",  # 宏观
+            "https://www.21jingji.com/channel/finance/",   # 金融
+            "https://www.21jingji.com/channel/capital/",   # 证券
+            "https://www.21jingji.com/channel/company/",   # 公司
+        ],
         "link_match": ["/article/"],
         "title_attr": "title",
         "date_selectors": [],

@@ -244,7 +244,7 @@ _SPLIT_RE = re.compile(r"[\s,，、;；/]+|与|和|及|旗下|的|vs\.?|VS\.?")
 _DROP_PHRASES = [
     "分析", "关于", "针对", "进行", "了解", "关注", "对比",
     "竞争态势", "态势", "现状", "情况", "前景", "趋势", "排名", "竞争",
-    "最新", "动态", "市场", "用户", "产品", "公司", "行业", "文章", "新闻",
+    "最新", "动态", "市场", "用户", "产品", "公司", "行业", "文章", "新闻", "投资",
 ]
 
 # 常见母公司名：单独命中时不足以证明话题相关（例如“腾讯”常出现在任何商业新闻里）
@@ -266,8 +266,13 @@ _CJK_LATIN_SPLIT = re.compile(
 # 拆出的弱词：2 字中文品类词 + 常见英文泛后缀（只做 +0.5 召回，避免泛匹配虚高）
 _WEAK_SUBTERMS = {
     "app", "api", "pro", "plus", "max", "mini", "web", "pc", "os",
-    "ai", "vr", "ar", "iq", "tv",
+    "ai", "vr", "ar", "iq", "tv", "etf",
 }
+
+# 品类后缀：复合词末尾命中时，把前缀作为强词补充（黄金价格 → 黄金；宁德时代 不命中则不拆）
+_ENTITY_SUFFIXES = {"价格", "市场", "板块", "概念", "指数", "行情", "走势",
+                  "行业", "公司", "业务", "服务", "平台", "应用", "产品",
+                  "基金", "龙头", "概念股", "方向"}
 
 
 def _is_weak_subterm(sub: str) -> bool:
@@ -309,6 +314,10 @@ def _extract_terms(query: str) -> tuple[list[str], list[str]]:
                 if len(rest) >= 2 and rest not in GENERIC_TERMS and rest not in strong:
                     strong.append(rest)
                 break
+        # 品类后缀剥离：黄金价格/黄金ETF → 补强“黄金”（黄金价格 → 黄金），提高“金价/黄金”类标题命中
+        for suffix in _ENTITY_SUFFIXES:
+            if p.endswith(suffix) and len(p) > len(suffix):
+                add_strong(p[: -len(suffix)])
         # 中英/数字混合边界拆词（如 白敬亭GOODBAI → 白敬亭 + GOODBAI）
         for sub in _CJK_LATIN_SPLIT.split(p):
             if len(sub) < 2 or sub == p or sub in GENERIC_TERMS or sub.isdigit():
@@ -387,6 +396,41 @@ def domain_of(query: str) -> str:
     return "其他"
 
 
+# 领域词表里的“通用过程词”（可降权）：课题已有具体实体时这些词只做弱匹配，避免泛命中霸榜。
+# 产品/商品实体（豆包/通义千问/黄金/GPT/DeepSeek…）虽在 domain_terms.json 用于领域判定，
+# 但不在此列，始终按实体处理（黄金价格 → 黄金 不降级）。
+_DEMOTE_DOMAIN_TERMS = {
+    "大模型", "人工智能", "深度学习", "机器学习", "语言模型", "算法", "智能", "模型",
+    "编程", "数据", "芯片", "半导体", "算力", "GPU", "CPU", "服务器", "硬件",
+    "云计算", "手机", "电脑", "笔记本", "软件", "数据库", "操作系统",
+    "自动驾驶", "无人驾驶", "机器人", "量子", "元宇宙", "区块链", "网络安全", "数字化", "互联网",
+    "开源", "工作流", "RPA", "agent", "智能体", "AI",
+    "央行", "美联储", "降息", "加息", "利率", "通胀", "货币", "GDP", "CPI", "PMI",
+    "贷款", "存款", "A股", "港股", "美股", "股价", "市值", "证监会", "行情", "牛市", "熊市",
+    "创业板", "科创板", "债券", "期货", "外汇", "亿元", "融资", "估值", "IPO", "上市",
+    "财报", "净利润", "营收", "银行", "保险", "证券", "信托", "基金", "公募", "私募",
+    "量化", "理财", "消费", "零售", "房地产", "监管",
+}
+
+
+def _partition_terms(orig_terms: list[str]) -> tuple[list[str], set[str]]:
+    """把强词分为（核心实体词, 应降级的领域通用词）。
+
+    通用过程词（融资/估值/A股…）在课题已有“不含它”的具体实体时降级：宁德时代+融资 → 融资降级；
+    产品实体（豆包/通义千问/黄金）不在 _DEMOTE_DOMAIN_TERMS，始终保留为强词。
+    """
+    demote_words = {t.lower() for t in _DEMOTE_DOMAIN_TERMS}
+    non_domain = [t for t in orig_terms if t.lower() not in demote_words]
+    weak: set[str] = set()
+    if non_domain:
+        for t in orig_terms:
+            tl = t.lower()
+            if tl in demote_words and any(tl not in c.lower() for c in non_domain):
+                weak.add(t)
+    core = [t for t in orig_terms if t not in weak]
+    return core, weak
+
+
 def _parse_date(date_str: str) -> datetime | None:
     """解析 RSS pubDate 或 YYYY-MM-DD 为 naive datetime，失败返回 None。"""
     if not date_str:
@@ -427,11 +471,9 @@ def search_candidates(query: str, count: int = 5) -> tuple[list[dict], list[str]
     orig_terms, weak_terms = _extract_terms(query)
     if not orig_terms:
         return [], []
-    # 领域通用词（融资/估值/大模型…）在课题已有具体实体词时降级为弱词，避免泛匹配霸榜；
-    # 纯领域词课题（如“美联储降息”）保持强词权重，否则将无词可搜。
-    domain_words = {t.lower() for terms in DOMAIN_TERMS.values() for t in terms}
-    has_core = any(t.lower() not in domain_words for t in orig_terms)
-    weak_orig = {t for t in orig_terms if t.lower() in domain_words} if has_core else set()
+    # 领域通用词（融资/估值/大模型…）在课题已有“不含它”的具体实体词时降级为弱词，
+    # 避免泛匹配霸榜；实体核心本身是领域词（如 黄金价格/黄金ETF → 黄金）不降级。
+    _, weak_orig = _partition_terms(orig_terms)
     expanded_terms = [t for t in _expand_terms(orig_terms) if t not in orig_terms]
     for t in weak_terms:
         if t not in expanded_terms:
