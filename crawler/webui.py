@@ -26,6 +26,7 @@ TOPIC_GUIDE_MD = """### 选题指南（提高成功率）
 3. **用官方产品名**：如「网易云音乐」而不是「网抑云」；别把多个产品挤在一个关键词里。
 4. **先预检再开跑**：点「预检选题」，1 分钟就知道有没有料，别直接跑 5 分钟完整分析。
 5. **失败常见原因**：数据源不覆盖该领域（音乐/文娱/消费类）、话题过冷、对象过多、命名不规范。
+6. **领域定制**：科技/金融选题会自动套用对应分析维度（科技=技术路线/生态/商业化；金融=市场规模/监管/风险/资本开支），预检结果会显示领域判定。
 """
 
 
@@ -105,14 +106,22 @@ def search_memory(query: str, top_k: int = 5):
     return "\n\n".join(lines)
 
 
-def precheck_topic(topic: str) -> str:
-    """选题预检：判断课题在白名单媒体中有没有料。"""
+def precheck_topic(topic: str) -> tuple[str, str]:
+    """选题预检：返回（领域判定标签, 预检 Markdown）。"""
     from .topic_check import check_topic, format_report
 
     topic = (topic or "").strip()
     if not topic:
         raise gr.Error("请输入课题或关键词，例如：豆包 通义千问")
-    return format_report(check_topic(topic))
+    info = check_topic(topic)
+    domain = info.get("domain", "其他")
+    domain_label = {
+        "科技": "领域判定：科技（技术路线/生态/产品/商业化维度）",
+        "金融": "领域判定：金融（市场规模/监管/风险/资本开支维度）",
+        "综合": "领域判定：综合（科技+金融维度）",
+        "其他": "领域判定：其他（市场/竞争/风险/趋势维度）",
+    }.get(domain, f"领域判定：{domain}")
+    return domain_label, format_report(info)
 
 
 def fill_topic(topic: str) -> str:
@@ -187,10 +196,13 @@ def build_demo() -> gr.Blocks:
             with gr.Row():
                 precheck_btn = gr.Button("预检选题", variant="primary")
                 go_btn = gr.Button("有料？去生成报告", variant="secondary")
+            domain_out = gr.Textbox(label="领域判定", interactive=False, lines=1)
             precheck_out = gr.Markdown(label="预检结果")
-            precheck_btn.click(precheck_topic, inputs=[ptopic], outputs=[precheck_out])
+            precheck_btn.click(precheck_topic, inputs=[ptopic], outputs=[domain_out, precheck_out])
             go_btn.click(fill_topic, inputs=[ptopic], outputs=[topic])
-        gr.Markdown("模型：qwen3.7-flash（收集/整理）+ qwen3.5-omni-plus（分析/审查）｜长期记忆：text-embedding-v3")
+        gr.Markdown(
+            f"模型：{config.LLM_MODEL_FLASH}（收集/整理）+ {config.LLM_MODEL_PLUS}（分析/审查）｜长期记忆：text-embedding-v3"
+        )
     return demo
 
 
