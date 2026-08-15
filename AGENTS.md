@@ -46,5 +46,6 @@
 - `uv init` / `uv add <pkg>` / `uv run python <script>`
 - 连通性测试：`uv run python scripts/connectivity_test.py`
 - V1.0 智能体（交互）：`uv run python -m crawler.agent.loop_v1`
+- V2.0 多角色报告：`uv run python -m crawler.multi_agent.orchestration --topic "分析课题"`
 - 国内网络检查：`uv run python scripts/check_network.py`
 - GitHub 参考检索：`uv run python scripts/gh_find.py 关键词`
