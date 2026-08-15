@@ -60,7 +60,7 @@ def _expand_terms(terms: list[str]) -> list[str]:
     return expanded
 
 
-def _match_items(xml_text: str, terms: list[str], limit: int) -> list[dict]:
+def _match_items(xml_text: str, orig_terms: list[str], expanded_terms: list[str], limit: int) -> list[dict]:
     root = ET.fromstring(xml_text)
     items = []
     for item in root.iter("item"):
@@ -72,26 +72,42 @@ def _match_items(xml_text: str, terms: list[str], limit: int) -> list[dict]:
         ).strip()
         if not title or not link:
             continue
-        hay = (title + " " + desc).lower()
-        if any(term.lower() in hay for term in terms):
-            items.append(
-                {
-                    "title": title,
-                    "url": link,
-                    "date": pub_date,
-                    "snippet": desc[:120],
-                }
-            )
-            if len(items) >= limit:
-                break
-    return items
+        hay_title = title.lower()
+        hay_all = (title + " " + desc).lower()
+        score = 0.0
+        matched: list[str] = []
+        for term in orig_terms:
+            tl = term.lower()
+            if tl in hay_title:
+                score += 3.0
+                matched.append(term)
+            elif tl in hay_all:
+                score += 2.0
+                matched.append(term)
+        for term in expanded_terms:
+            if term.lower() in hay_all:
+                score += 0.5
+        if score <= 0:
+            continue
+        items.append(
+            {
+                "title": title,
+                "url": link,
+                "date": pub_date,
+                "snippet": desc[:120],
+                "score": round(score, 2),
+                "matched": matched,
+            }
+        )
+    items.sort(key=lambda x: (x["score"], x["date"]), reverse=True)
+    return items[:limit]
 
 
 def run(query: str, count: int = 5) -> str:
-    terms = [t for t in re.split(r"[\s,，、;；]+", query) if t]
-    if not terms:
+    orig_terms = [t for t in re.split(r"[\s,，、;；]+", query) if t]
+    if not orig_terms:
         return "关键词为空，请提供有效关键词。"
-    terms = _expand_terms(terms)
+    expanded_terms = [t for t in _expand_terms(orig_terms) if t not in orig_terms]
     limit = max(1, min(int(count), 10))
 
     results: list[dict] = []
@@ -103,7 +119,7 @@ def run(query: str, count: int = 5) -> str:
         for fut in concurrent.futures.as_completed(futures):
             name = futures[fut]
             try:
-                for item in _match_items(fut.result(), terms, limit):
+                for item in _match_items(fut.result(), orig_terms, expanded_terms, limit):
                     item["source"] = name
                     results.append(item)
             except Exception:
@@ -113,11 +129,11 @@ def run(query: str, count: int = 5) -> str:
         note = f"（{len(failed)} 个来源暂时不可用：{', '.join(failed)}）" if failed else ""
         return f"在可信媒体中没有搜到与“{query}”相关的文章，请换关键词试试。{note}"
 
-    results.sort(key=lambda x: x["date"], reverse=True)
+    results.sort(key=lambda x: (x["score"], x["date"]), reverse=True)
     lines = []
     for i, item in enumerate(results[:20], start=1):
         lines.append(
-            f"{i}. {item['title']}（来源：{item['source']}）\n"
+            f"{i}. {item['title']}（来源：{item['source']}，相关度 {item['score']}）\n"
             f"   链接：{item['url']}\n   日期：{item['date']}"
         )
     note = f"\n（另有 {len(failed)} 个来源暂时不可用：{', '.join(failed)}）" if failed else ""

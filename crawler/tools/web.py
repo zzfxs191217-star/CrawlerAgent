@@ -47,6 +47,27 @@ def _normalize_url(url: str) -> str:
     return url
 
 
+CONTENT_SELECTORS = [
+    "article",
+    ".article-content", ".article_content", "#article-content",
+    ".post-content", ".entry-content", ".rich_media_content",
+    ".article-detail", ".article", ".content", "#content", "main",
+]
+
+
+def _extract_content(soup) -> "BeautifulSoup":
+    """优先返回文章正文容器，找不到时回退整个页面。"""
+    best, best_len = None, 0
+    for selector in CONTENT_SELECTORS:
+        for node in soup.select(selector):
+            length = len(node.get_text("", strip=True))
+            if length > best_len:
+                best, best_len = node, length
+    if best is not None and best_len >= 200:
+        return best
+    return soup
+
+
 def _clean_lines(soup: BeautifulSoup) -> list[str]:
     lines = [
         ln.strip() for ln in soup.get_text("\n", strip=True).splitlines() if ln.strip()
@@ -65,7 +86,8 @@ def run(url: str, max_chars: int = DEFAULT_MAX_CHARS) -> str:
     title = soup.title.get_text(strip=True) if soup.title else ""
     for tag in soup(["script", "style", "noscript", "svg"]):
         tag.decompose()
-    text = "\n".join(_clean_lines(soup))
+    main_node = _extract_content(soup)
+    text = "\n".join(_clean_lines(main_node))
     if max_chars and len(text) > max_chars:
         text = text[:max_chars] + "……（已截断）"
     return f"标题：{title}\n正文（{len(text)} 字符）：\n{text}"

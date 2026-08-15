@@ -102,6 +102,11 @@ def gather_materials(client, tracker, model: str, tools: list[dict], topic: str,
     return materials
 
 
+def _md_cell(value: str) -> str:
+    """表格单元格里的竖线替换为全角，避免破坏 Markdown 表格。"""
+    return str(value).replace("|", "｜")
+
+
 def _as_list(data: dict, key: str) -> list:
     value = data.get(key, [])
     return value if isinstance(value, list) else []
@@ -126,7 +131,7 @@ def assemble_report(topic: str, materials: list[dict], facts: dict, analysis: di
     ]
     for i, m in enumerate(materials, start=1):
         domain = re.sub(r"^https?://", "", m.get("url", "")).split("/")[0]
-        lines.append(f"| {i} | {m.get('title', '')[:40]} | {domain} | {m.get('url', '')} |")
+        lines.append(f"| {i} | {_md_cell(m.get('title', '')[:40])} | {_md_cell(domain)} | {_md_cell(m.get('url', ''))} |")
 
     lines += ["", "## 二、事实提炼", ""]
     if facts_list:

@@ -37,6 +37,7 @@
 7. 长期记忆（V3.0）：`crawler/memory/` 本地知识库，报告自动入库，智能体可用 `search_knowledge` 工具检索历史结论
 8. Web 界面（V3.1）：`crawler/webui.py` 本地服务（127.0.0.1:7860），密钥只留服务端；`run_pipeline` 支持进度回调与取消（`PipelineCancelled`），界面含取消任务/下载报告/模型选择
 9. 报告导出（V3.2）：`crawler/export.py` 把 Markdown 报告渲染为 PDF（reportlab，中文字体回退 STSong-Light）与 Word（python-docx），CLI `--export` + Web 界面按钮
+10. 验收修复（V3.2，D-012）：正文抽取优先内容容器；表格单元格 `|` 转义全角；PDF 表格行归一化+等分列宽；RSS 候选按相关度打分排序
 
 ## 五、工作约定
 

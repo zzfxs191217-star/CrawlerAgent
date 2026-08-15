@@ -176,11 +176,16 @@ def export_pdf(markdown_text: str, out_path: Path) -> Path:
                 bullet = "•" if t == "ul" else f"{idx}."
                 story.append(Paragraph(_inline_to_html(item), styles["li"], bulletText=bullet))
         elif t == "table":
+            rows = block["rows"]
+            if not rows:
+                continue
+            max_cols = max(len(r) for r in rows)
+            rows = [r + [""] * (max_cols - len(r)) for r in rows]
             data = [
                 [Paragraph(_inline_to_html(cell), styles["cell"]) for cell in row]
-                for row in block["rows"]
+                for row in rows
             ]
-            table = Table(data, repeatRows=1)
+            table = Table(data, repeatRows=1, colWidths=[doc.width / max_cols] * max_cols)
             table.setStyle(TableStyle([
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EEF1F5")),
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CCCCCC")),
