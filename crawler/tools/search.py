@@ -67,30 +67,53 @@ def _expand_terms(terms: list[str]) -> list[str]:
     return expanded
 
 
-def _score_title(title: str, desc: str, orig_terms: list[str], expanded_terms: list[str]) -> tuple[float, list[str]]:
-    """原标题命中 +3，正文/摘要命中 +2，2-gram 兜底 +0.5。返回（分数, 命中的实体词）。"""
+_AGGREGATE_RE = re.compile(r"早报|晚报|晨报|午报|周记|周报|月报|早知道|盘点|汇总|集锦|速览|要闻|大事记|数读")
+
+
+def _score_title(
+    title: str,
+    desc: str,
+    orig_terms: list[str],
+    expanded_terms: list[str],
+    weak_orig: set[str] | frozenset[str] = frozenset(),
+) -> tuple[float, list[str]]:
+    """实体词原标题命中 +3、正文/摘要命中 +2；领域弱词（融资/估值/AI…）降为 +1.5/+1.0；
+    2-gram 兜底 +0.5。聚合/盘点类标题（早报/周记/早知道…）即使命中分数封顶 1.5，避免霸榜。"""
     hay_title = title.lower()
     hay_all = (title + " " + desc).lower()
     score = 0.0
     matched: list[str] = []
     for term in orig_terms:
         tl = term.lower()
+        weak = term in weak_orig
         if tl in hay_title:
-            score += 3.0
-            matched.append(term)
+            score += 1.5 if weak else 3.0
+            if not weak:
+                matched.append(term)
         elif tl in hay_all:
-            score += 2.0
-            matched.append(term)
+            score += 1.0 if weak else 2.0
+            if not weak:
+                matched.append(term)
+    gram_score = 0.0
     for term in expanded_terms:
         if term.lower() in hay_all:
-            score += 0.5
+            gram_score += 0.5
+    score += min(gram_score, 1.0)  # 2-gram 兜底总贡献封顶 1.0，只做召回、不主导排序
+    if _AGGREGATE_RE.search(title):
+        score = min(score, 1.0)  # 聚合文章即使命中实体也低于“真相关”阈值（含财经源加成后仍 <2.0）
     # 2-gram/弱词兜底只做召回：没有原词命中时分数封顶 1.0，避免泛匹配排到前面
     if not matched and score > 1.0:
         score = 1.0
     return score, matched
 
 
-def _match_items(xml_text: str, orig_terms: list[str], expanded_terms: list[str], limit: int) -> list[dict]:
+def _match_items(
+    xml_text: str,
+    orig_terms: list[str],
+    expanded_terms: list[str],
+    limit: int,
+    weak_orig: set[str] = frozenset(),
+) -> list[dict]:
     root = ET.fromstring(xml_text)
     items = []
     for item in root.iter("item"):
@@ -102,7 +125,7 @@ def _match_items(xml_text: str, orig_terms: list[str], expanded_terms: list[str]
         ).strip()
         if not title or not link:
             continue
-        score, matched = _score_title(title, desc, orig_terms, expanded_terms)
+        score, matched = _score_title(title, desc, orig_terms, expanded_terms, weak_orig)
         if score <= 0:
             continue
         items.append(
@@ -130,7 +153,15 @@ def _norm_date(text: str) -> str:
     return ""
 
 
-def _match_list_page(html_text: str, base_url: str, cfg: dict, orig_terms: list[str], expanded_terms: list[str], limit: int) -> list[dict]:
+def _match_list_page(
+    html_text: str,
+    base_url: str,
+    cfg: dict,
+    orig_terms: list[str],
+    expanded_terms: list[str],
+    limit: int,
+    weak_orig: set[str] = frozenset(),
+) -> list[dict]:
     """从无 RSS 站点的列表页提取文章链接，按标题关键词匹配（配置见 sources.LIST_PAGES）。"""
     soup = BeautifulSoup(html_text, "html.parser")
     link_subs = cfg.get("link_match") or []
@@ -184,7 +215,7 @@ def _match_list_page(html_text: str, base_url: str, cfg: dict, orig_terms: list[
                 if date:
                     break
 
-        score, matched = _score_title(title, "", orig_terms, expanded_terms)
+        score, matched = _score_title(title, "", orig_terms, expanded_terms, weak_orig)
         if score <= 0:
             continue
         items.append(
@@ -266,6 +297,7 @@ def _extract_terms(query: str) -> tuple[list[str], list[str]]:
         p = part
         for phrase in _DROP_PHRASES:
             p = p.replace(phrase, "")
+        p = re.sub(r"\d{4}年?$", "", p)  # 去掉尾部年份（宁德时代2026年 → 宁德时代），减少泛 2-gram 噪音
         p = p.strip()
         if len(p) < 2 or p in GENERIC_TERMS:
             continue
@@ -395,6 +427,11 @@ def search_candidates(query: str, count: int = 5) -> tuple[list[dict], list[str]
     orig_terms, weak_terms = _extract_terms(query)
     if not orig_terms:
         return [], []
+    # 领域通用词（融资/估值/大模型…）在课题已有具体实体词时降级为弱词，避免泛匹配霸榜；
+    # 纯领域词课题（如“美联储降息”）保持强词权重，否则将无词可搜。
+    domain_words = {t.lower() for terms in DOMAIN_TERMS.values() for t in terms}
+    has_core = any(t.lower() not in domain_words for t in orig_terms)
+    weak_orig = {t for t in orig_terms if t.lower() in domain_words} if has_core else set()
     expanded_terms = [t for t in _expand_terms(orig_terms) if t not in orig_terms]
     for t in weak_terms:
         if t not in expanded_terms:
@@ -420,9 +457,9 @@ def search_candidates(query: str, count: int = 5) -> tuple[list[dict], list[str]
             try:
                 text = fut.result()
                 if kind == "rss":
-                    items = _match_items(text, orig_terms, expanded_terms, limit)
+                    items = _match_items(text, orig_terms, expanded_terms, limit, weak_orig)
                 else:
-                    items = _match_list_page(text, url, cfg, orig_terms, expanded_terms, limit)
+                    items = _match_list_page(text, url, cfg, orig_terms, expanded_terms, limit, weak_orig)
                 for item in items:
                     item["source"] = name
                     results.append(item)

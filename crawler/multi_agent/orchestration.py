@@ -17,6 +17,7 @@ from pathlib import Path
 from .. import config
 from ..agent.llm import UsageTracker, create_client
 from ..tools import execute_tool, get_tool_specs
+from ..tools.search import DOMAIN_TERMS, _extract_terms
 from . import prompts
 from .analyst import run_analyst
 from .researcher import run_researcher
@@ -24,14 +25,20 @@ from .reviewer import run_reviewer
 
 REPORTS_DIR = Path(__file__).resolve().parent.parent.parent / "reports"
 MAX_REVISION_ROUNDS = 2
+MAX_GATHER_SEARCHES = 3
 
 
 class PipelineCancelled(RuntimeError):
     """分析任务被用户取消（Web 界面取消按钮触发）。"""
 
 GATHER_SYSTEM = (
-    "你是 CrawlerAgent 的情报收集员。根据分析主题搜索相关新闻报道并抓取正文，"
-    "最多搜索 2 次、抓取 2-3 篇正文后立即停止。优先选择可信来源（白名单媒体、官方渠道）。"
+    "你是 CrawlerAgent 的情报收集员。根据分析主题搜索相关新闻报道并抓取正文。\n"
+    "选文要求：\n"
+    "1. 优先选择「标题即含主题实体、正文围绕主题展开」的独立报道，正文必须与主题直接相关；\n"
+    "2. 避开「早报/晚报/日报/周记/汇总/盘点」类聚合文章（这类文章只是顺带提到主题，信息量低）；\n"
+    "3. 最多搜索 2 次、抓取 3-4 篇强相关正文后停止；\n"
+    "4. 优先可信来源（白名单媒体、官方渠道）。\n"
+    "如果 2 次搜索都找不到聚焦报道，说明该主题近期缺乏直接报道，如实结束收集并说明原因，不要用早报/周记凑数。"
 )
 
 
@@ -50,11 +57,16 @@ def gather_materials(client, tracker, model: str, tools: list[dict], topic: str,
     ]
     materials: list[dict] = []
     seen: set[str] = set()
+    searches = 0
     start = time.time()
     for step in range(config.MAX_AGENT_ITERATIONS):
         if cancelled is not None and cancelled():
             raise PipelineCancelled("任务已被用户取消")
         if time.time() - start > timeout:
+            break
+        # 代码层兜底：最多搜索 3 次，找不到聚焦报道就收手（避免反复搜索烧 token）
+        if searches > MAX_GATHER_SEARCHES:
+            print("[收集] 搜索次数已达上限，停止收集")
             break
         resp = client.chat.completions.create(
             model=model, messages=messages, tools=tools, max_tokens=2048
@@ -82,6 +94,8 @@ def gather_materials(client, tracker, model: str, tools: list[dict], topic: str,
         )
         for call in msg.tool_calls:
             name = call.function.name
+            if name == "search_news":
+                searches += 1
             try:
                 arguments = json.loads(call.function.arguments or "{}")
             except json.JSONDecodeError:
@@ -95,9 +109,20 @@ def gather_materials(client, tracker, model: str, tools: list[dict], topic: str,
             if name == "fetch_web_page":
                 url = arguments.get("url", "")
                 title, body = _parse_fetch_result(result)
-                if url and url not in seen and len(body) >= 200:
+                if url and len(body) >= 200 and url not in seen:
                     seen.add(url)
-                    materials.append({"url": url, "title": title, "text": body[:4000]})
+                    # 相关性过滤：优先要求“主题核心实体”命中（排除领域词如 融资/A股），
+                    # 无核心实体时退回任意强词，避免早报/汇总类泛命中文章混入
+                    strong, _ = _extract_terms(topic)
+                    if strong:
+                        domain_words = {t for terms in DOMAIN_TERMS.values() for t in terms}
+                        core = [t for t in strong if t.lower() not in domain_words]
+                        required = core or strong
+                        hay = (title + " " + body).lower()
+                        if not any(t.lower() in hay for t in required):
+                            print(f"[收集] 弱相关材料已跳过：{title[:40]}")
+                            continue
+                    materials.append({"url": url, "title": title, "text": body[:6000]})
             messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
     return materials
 
@@ -159,7 +184,14 @@ def assemble_report(topic: str, materials: list[dict], facts: dict, analysis: di
         lines.append("（无结论条目）")
 
     lines += ["", "## 五、审查结果", ""]
-    lines.append(f"整体判定：**{review.get('overall', 'unknown')}**")
+    overall = review.get("overall") or "unknown"
+    if overall == "revise":
+        verdict = "需修订"
+    elif overall == "pass":
+        verdict = "通过"
+    else:
+        verdict = f"通过（原始判定：{overall}）"  # 模型偶发返回 schema 外值，未触发修订视为通过
+    lines.append(f"整体判定：**{verdict}**")
     if review_items:
         for item in review_items:
             lines.append(f"- [{item.get('verdict', '?')}] {item.get('conclusion', '')} — {item.get('note', '')}")
@@ -216,6 +248,11 @@ def run_pipeline(topic: str, gather_model: str = config.LLM_MODEL_FLASH,
     _check()
     facts = run_researcher(client, tracker, model, topic, materials)
     _check()
+    if not _as_list(facts, "facts"):
+        raise RuntimeError(
+            "研究员未能从材料中提炼出有效事实（材料可能与主题相关性不足）。"
+            "建议换一个更受媒体关注的选题，或换官方产品名/更聚焦的关键词后重试。"
+        )
 
     _report("[3/5] 分析师竞争态势分析…", 0.6)
     _check()

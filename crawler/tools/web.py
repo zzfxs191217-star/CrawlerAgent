@@ -14,7 +14,7 @@ HEADERS = {
     )
 }
 TIMEOUT = 15
-DEFAULT_MAX_CHARS = 3000
+DEFAULT_MAX_CHARS = 6000
 
 SPEC = {
     "type": "function",
@@ -30,8 +30,8 @@ SPEC = {
                 },
                 "max_chars": {
                     "type": "integer",
-                    "description": "返回正文的最大字符数，默认 3000",
-                    "default": 3000,
+                    "description": "返回正文的最大字符数，默认 6000",
+                    "default": 6000,
                 },
             },
             "required": ["url"],
