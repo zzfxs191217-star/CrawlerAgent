@@ -10,6 +10,7 @@
 - [x] 阶段三（V1.0）：ReAct 多步推理 + 工作台账记忆 + 用户可中断（M2 通过：搜索→抓取→总结）
 - [x] 阶段四（V2.0）：多角色协作 + 结构化报告（M3 通过：豆包 vs 通义千问报告）
 - [x] 阶段五（V3.0）：长期记忆/知识库 RAG——报告自动入库 + `search_knowledge` 检索复用
+- [x] 阶段六（V3.1）：Web 界面（Gradio）——浏览器一键分析 + 知识库检索
 
 ## 快速开始
 
@@ -21,6 +22,7 @@
 6. `uv run python -m crawler.multi_agent.orchestration --topic "分析课题"`（V2.0 多角色报告）
 7. `uv run python -m crawler.memory.store --index-reports`（历史报告入库）
 8. `uv run python -m crawler.memory.store --query "检索问题"`（知识库检索）
+9. `uv run python -m crawler.webui`（Web 界面：浏览器一键分析）
 
 ## 文档
 

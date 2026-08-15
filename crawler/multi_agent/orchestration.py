@@ -161,6 +161,79 @@ def assemble_report(topic: str, materials: list[dict], facts: dict, analysis: di
     return "\n".join(lines)
 
 
+def run_pipeline(topic: str, gather_model: str = config.LLM_MODEL_FLASH,
+                 model: str = config.LLM_MODEL_PLUS, timeout: int = 300,
+                 progress=None, out_dir: Path | None = None) -> dict:
+    """执行完整分析流水线（资料收集→研究员→分析师→审查员→报告），返回结果字典。
+
+    progress 为可选回调，签名：progress(message: str, fraction: float | None)。
+    """
+    client = create_client()
+    tracker = UsageTracker()
+    tools = get_tool_specs()
+
+    def _report(msg: str, frac: float | None = None) -> None:
+        print(msg)
+        if progress is not None:
+            try:
+                progress(msg, frac)
+            except Exception:
+                pass
+
+    _report(f"[1/5] 资料收集（模型：{gather_model}）", 0.05)
+    materials = gather_materials(client, tracker, gather_model, tools, topic, timeout)
+    if not materials:
+        raise RuntimeError("未收集到可用材料，任务中止。请换个课题或稍后再试。")
+    _report(f"已收集 {len(materials)} 篇材料", 0.3)
+
+    _report("[2/5] 研究员提炼事实…", 0.4)
+    facts = run_researcher(client, tracker, model, topic, materials)
+
+    _report("[3/5] 分析师竞争态势分析…", 0.6)
+    analysis = run_analyst(client, tracker, model, topic, _as_list(facts, "facts"))
+
+    _report("[4/5] 审查员证据核验…", 0.75)
+    review = run_reviewer(client, tracker, model, topic, analysis, _as_list(facts, "facts"))
+    rounds = 0
+    while review.get("overall") == "revise" and rounds < MAX_REVISION_ROUNDS:
+        rounds += 1
+        _report(f"[审查] 第 {rounds} 轮修正：{review.get('feedback', '')}", 0.75 + 0.06 * rounds)
+        analysis = run_analyst(client, tracker, model, topic, _as_list(facts, "facts"),
+                               feedback=review.get("feedback"))
+        review = run_reviewer(client, tracker, model, topic, analysis, _as_list(facts, "facts"))
+
+    _report("[5/5] 生成报告并写入长期记忆…", 0.9)
+    report_md = assemble_report(topic, materials, facts, analysis, review, model, tracker)
+    reports_dir = out_dir or REPORTS_DIR
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    slug = re.sub(r"[^\w\u4e00-\u9fff]+", "_", topic).strip("_")[:40]
+    report_path = reports_dir / f"{slug}_{datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
+    report_path.write_text(report_md, encoding="utf-8")
+
+    knowledge_note = ""
+    try:
+        from ..memory.store import KnowledgeStore
+
+        added = KnowledgeStore().add_document(topic, report_md, "report")
+        knowledge_note = f"已加入长期记忆库（{added} 个片段）"
+        print(knowledge_note)
+    except Exception as exc:
+        knowledge_note = f"记忆库入库失败（不影响报告）：{exc}"
+        print(knowledge_note)
+
+    _report(f"报告已生成：{report_path}", 1.0)
+    return {
+        "report": report_md,
+        "report_path": report_path,
+        "tracker": tracker,
+        "materials": materials,
+        "facts": facts,
+        "analysis": analysis,
+        "review": review,
+        "knowledge_note": knowledge_note,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="CrawlerAgent V2.0 多角色协作报告生成")
     parser.add_argument("--topic", required=True, help="分析课题，例如：分析字节跳动旗下豆包与阿里通义千问的竞争态势")
@@ -169,52 +242,16 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, default=300, help="资料收集超时秒数")
     args = parser.parse_args()
 
-    client = create_client()
-    tracker = UsageTracker()
-    tools = get_tool_specs()
-
-    print(f"[1/4] 资料收集（模型：{args.gather_model}）")
-    materials = gather_materials(client, tracker, args.gather_model, tools, args.topic, args.timeout)
-    if not materials:
-        print("未收集到可用材料，任务中止。")
-        return 1
-    print(f"已收集 {len(materials)} 篇材料")
-
-    print(f"\n[2/4] 研究员提炼事实（模型：{args.model}）")
-    facts = run_researcher(client, tracker, args.model, args.topic, materials)
-
-    print(f"\n[3/4] 分析师竞争态势分析（模型：{args.model}）")
-    analysis = run_analyst(client, tracker, args.model, args.topic, _as_list(facts, "facts"))
-
-    print(f"\n[4/4] 审查员证据核验（模型：{args.model}）")
-    review = run_reviewer(client, tracker, args.model, args.topic, analysis, _as_list(facts, "facts"))
-    rounds = 0
-    while review.get("overall") == "revise" and rounds < MAX_REVISION_ROUNDS:
-        rounds += 1
-        print(f"\n[审查] 第 {rounds} 轮修正：{review.get('feedback', '')}")
-        analysis = run_analyst(client, tracker, args.model, args.topic, _as_list(facts, "facts"), feedback=review.get("feedback"))
-        review = run_reviewer(client, tracker, args.model, args.topic, analysis, _as_list(facts, "facts"))
-
-    report = assemble_report(args.topic, materials, facts, analysis, review, args.model, tracker)
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    slug = re.sub(r"[^\w\u4e00-\u9fff]+", "_", args.topic).strip("_")[:40]
-    report_path = REPORTS_DIR / f"{slug}_{datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
-    report_path.write_text(report, encoding="utf-8")
-
     try:
-        from ..memory.store import KnowledgeStore
+        result = run_pipeline(args.topic, args.gather_model, args.model, args.timeout)
+    except RuntimeError as exc:
+        print(exc)
+        return 1
 
-        added = KnowledgeStore().add_document(args.topic, report, "report")
-        print(f"已加入长期记忆库（{added} 个片段）")
-    except Exception as exc:
-        print(f"记忆库入库失败（不影响报告）：{exc}")
-
-    print(f"\n报告已生成：{report_path}")
-    print(tracker.summary())
+    print(f"\n{result['tracker'].summary()}")
     print("\n报告预览：")
-    print("\n".join(report.splitlines()[:40]))
+    print("\n".join(result["report"].splitlines()[:40]))
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

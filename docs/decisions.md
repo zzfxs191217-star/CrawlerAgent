@@ -51,3 +51,10 @@
 - 决策：新增 `crawler/memory/`（`embed.py` 用 `text-embedding-v3` 生成向量；`store.py` 提供 `KnowledgeStore`，文档分块 800 字/块、100 字重叠、按句号切块，JSON 落盘 `data/knowledge/index.json`，余弦相似度检索并按文档去重）；新增工具 `search_knowledge` 并注册；V2.0 报告生成后自动入库；CLI 支持 `--stats/--index-reports/--add-file/--query`。
 - 理由：JSON + 本地向量零额外服务依赖、全国内可达；报告入库后可跨会话复用结论，是长期记忆的第一版。
 - 教训：分块函数曾因末块 `start` 回退写成死循环，内存被吃爆触发 `MemoryError`（终端白屏崩溃）；已修复（末块直接截断退出）并加冒烟验证。长文本处理代码必须先小样本验证终止性。
+## D-009 V3.1 Web 界面：Gradio 本地服务
+
+- 日期：2026-08-15
+- 背景：开源后需要让非开发者也能用，CLI 门槛较高。
+- 决策：新增 `crawler/webui.py`（Gradio 6.x），两个页签——分析报告（输入课题→进度条→渲染报告 + 文件路径 + Token 用量）与知识库检索；同时把 `orchestration.py` 的 CLI 主流程抽出为 `run_pipeline(topic, ..., progress=回调)`，CLI 与 Web 共用一条流水线。
+- 理由：Gradio 纯 Python、清华镜像可装、对 AI 工作流展示友好；服务只绑定 127.0.0.1，API Key 仅存服务端 `.env`、不下发浏览器。
+- 备注：取消/中断（gr.Cancelled）留待后续版本；默认端口 7860。

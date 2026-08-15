@@ -23,6 +23,7 @@
 - 阶段三 V1.0：ReAct 多步推理 + 工作台账记忆 + 用户可中断（`crawler/agent/loop_v1.py`、`memory.py`）
 - 阶段四 V2.0：研究员/分析师/审查员多角色协作 + Markdown 报告（`crawler/multi_agent/`）
 - 阶段五 V3.0：长期记忆/知识库 RAG——分块向量化 + 检索工具 + 报告自动入库（`crawler/memory/`）
+- 阶段六 V3.1：Web 界面（Gradio `crawler/webui.py`，CLI/Web 共用 `run_pipeline` 流水线）
 
 ## 四、已确认的关键设计（决策详情见 `docs/decisions.md`）
 
@@ -33,6 +34,7 @@
 5. 交互模式：阶段化 + 可中断（每阶段结束询问用户：继续/换方向/补充来源/跳过）
 6. 上下文纪律：主循环只保留结构化条目 + 台账；原始网页和超长文本走单次摘要调用
 7. 长期记忆（V3.0）：`crawler/memory/` 本地知识库，报告自动入库，智能体可用 `search_knowledge` 工具检索历史结论
+8. Web 界面（V3.1）：`crawler/webui.py` 本地服务（127.0.0.1:7860），密钥只留服务端；`run_pipeline` 支持进度回调
 
 ## 五、工作约定
 
@@ -53,3 +55,4 @@
 - GitHub 参考检索：`uv run python scripts/gh_find.py 关键词`
 - 记忆库入库：`uv run python -m crawler.memory.store --index-reports`
 - 记忆库检索：`uv run python -m crawler.memory.store --query "问题"`
+- Web 界面：`uv run python -m crawler.webui`（浏览器打开 http://127.0.0.1:7860）
