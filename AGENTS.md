@@ -42,7 +42,8 @@
 11. 选题助手（V3.3，D-013）：`topic_check.py` 实体词提取 + 相关度判定（排除通用词/母公司噪音）；Web「选题助手」页签；`run_pipeline` 失败时输出诊断建议
 12. 数据源（科技+金融，D-014/D-016）：发现层 RSS——钛媒体/爱范儿/极客公园/量子位/少数派/开源中国/cnBeta/InfoQ中文/雷锋网/新智元/IT之家/Solidot；列表页——第一财经/界面新闻/21财经；已实测不可用不接入（机器之心付费、亿欧 202、DoNews/品玩 404、晚点 SSL、华尔街见闻前端渲染、36氪/虎嗅反爬）；文娱源（机核/娱乐资本论/品牌星球）已按 D-016 移除
 13. 列表页发现（D-015/D-016）：`search.py` `_match_list_page` 从 `sources.LIST_PAGES` 抓首页提取标题（支持 `title_selectors` / `title_attr`，按 URL 去重）
-14. 科技+金融细化（D-017）：`search.py` 实体拆词（强词/弱词 + 已知领域词切分）、领域词表 `DOMAIN_TERMS`/`domain_of`、打分细化（2-gram 封顶 1.0、日期衰减 7d×1.2/30d×1.0/更早×0.5、金融源 +0.5）；选题助手输出领域与针对性建议
+14. 科技+金融细化（D-017）：`search.py` 实体拆词（强词/弱词 + 已知领域词切分）、领域判定 `domain_of`、打分细化（2-gram 封顶 1.0、日期衰减 7d×1.2/30d×1.0/更早×0.5、金融源 +0.5）；选题助手输出领域与针对性建议
+15. 领域词表文件化（D-018）：词表在 `config/domain_terms.json`（科技/金融→子类→词:权重 2强/1弱），`search.py` 启动加载、缺失回退内置精简表；强词参与拆词、弱词只做领域判定；`scripts/scan_domain_terms.py`（jieba+log 比率）生成候选到 `docs/domain_terms_candidates.md`，人工审核后并入，不自动入库
 
 ## 五、工作约定
 
@@ -66,3 +67,4 @@
 - Web 界面：`uv run python -m crawler.webui`（浏览器打开 http://127.0.0.1:7860）
 - 报告导出：`uv run python -m crawler.export --file reports/xx.md --fmt pdf,docx`
 - 选题预检：`uv run python -m crawler.topic_check --topic "课题"`
+- 领域词候选生成：`uv run python scripts/scan_domain_terms.py --per-source 80`（产出 `docs/domain_terms_candidates.md`，人工审核后并入 `config/domain_terms.json`）

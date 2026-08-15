@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import concurrent.futures
 import html
+import io
+import json
 import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 from urllib.parse import urljoin
 
 import requests
@@ -289,42 +292,60 @@ def _extract_terms(query: str) -> tuple[list[str], list[str]]:
     return strong, weak
 
 
-# 科技/金融领域词表：用于选题领域判定（domain_of）
-DOMAIN_TERMS: dict[str, set[str]] = {
+# 项目根目录（crawler/tools/search.py 向上三级）
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+# 内置兜底词表：config/domain_terms.json 缺失或损坏时使用（完整词表以 JSON 为准）
+_DEFAULT_DOMAIN_TERMS: dict[str, dict[str, int]] = {
     "科技": {
-        "AI", "人工智能", "大模型", "语言模型", "深度学习", "机器学习", "算法",
-        "芯片", "半导体", "算力", "GPU", "CPU", "开源", "云计算", "数据库",
-        "操作系统", "自动驾驶", "无人驾驶", "机器人", "智能", "数字化", "互联网",
-        "软件", "硬件", "手机", "电脑", "笔记本", "服务器", "网络安全", "量子",
-        "元宇宙", "区块链", "豆包", "通义千问", "DeepSeek", "ChatGPT", "文心一言",
-        "Kimi", "Gemini", "Claude", "Llama", "GPT",
+        "大模型": 2, "人工智能": 2, "芯片": 2, "算力": 2, "GPU": 2,
+        "自动驾驶": 2, "机器人": 2, "量子": 2, "AI": 2, "开源": 1,
     },
     "金融": {
-        "融资", "估值", "IPO", "上市", "财报", "营收", "净利润", "股价", "市值",
-        "央行", "降息", "加息", "美联储", "A股", "港股", "美股", "债券", "基金",
-        "银行", "保险", "证券", "信托", "期货", "外汇", "黄金", "利率", "贷款",
-        "存款", "货币", "通胀", "GDP", "CPI", "PMI", "消费", "零售", "房地产",
-        "行情", "牛市", "熊市", "创业板", "科创板", "监管", "证监会", "量化",
-        "公募", "私募", "理财",
+        "美联储": 2, "央行": 2, "降息": 2, "融资": 2, "估值": 2,
+        "IPO": 2, "财报": 2, "A股": 2, "股价": 2, "银行": 1,
     },
 }
+
+
+def _load_domain_terms() -> dict[str, dict[str, int]]:
+    """加载 config/domain_terms.json（科技/金融 → 子类 → 词:权重），压平为 {领域: {词: 权重}}。"""
+    path = _PROJECT_ROOT / "config" / "domain_terms.json"
+    try:
+        with io.open(path, encoding="utf-8") as f:
+            raw = json.load(f)
+        flat: dict[str, dict[str, int]] = {}
+        for domain, subclasses in raw.items():
+            terms: dict[str, int] = {}
+            for items in subclasses.values():
+                for term, weight in items.items():
+                    terms[term] = int(weight)
+            flat[domain] = terms
+        return flat
+    except Exception:
+        return {k: dict(v) for k, v in _DEFAULT_DOMAIN_TERMS.items()}
+
+
+# 领域词表（词 → 权重：2 强 / 1 弱），加载自 config/domain_terms.json
+DOMAIN_TERMS: dict[str, dict[str, int]] = _load_domain_terms()
 
 # 专业财经源：金融领域选题时加分
 FINANCE_SOURCES = {"第一财经", "界面新闻", "21财经"}
 
-# 已知中文领域词（科技+金融）：用于中文复合词内的已知词切分（如 豆包大模型 → 豆包 + 大模型）
+# 强中文领域词（权重≥2）：用于中文复合词内的已知词切分（如 豆包大模型 → 豆包 + 大模型）；弱词只参与领域判定
 _KNOWN_SUBTERMS = {
     t
-    for t in DOMAIN_TERMS["科技"] | DOMAIN_TERMS["金融"]
-    if re.fullmatch(r"[\u4e00-\u9fff]{2,}", t)
+    for terms in DOMAIN_TERMS.values()
+    for t, w in terms.items()
+    if w >= 2 and re.fullmatch(r"[\u4e00-\u9fff]{2,}", t)
 }
 
 
 def domain_of(query: str) -> str:
-    """按领域词表判断课题所属领域：科技 / 金融 / 综合 / 其他。"""
+    """按领域词表加权判断课题所属领域：科技 / 金融 / 综合 / 其他（强词 +2，弱词 +1）。"""
     text = query.lower()
-    tech = sum(1 for t in DOMAIN_TERMS["科技"] if t.lower() in text)
-    fin = sum(1 for t in DOMAIN_TERMS["金融"] if t.lower() in text)
+    tech = sum(w for t, w in DOMAIN_TERMS.get("科技", {}).items() if t.lower() in text)
+    fin = sum(w for t, w in DOMAIN_TERMS.get("金融", {}).items() if t.lower() in text)
     if tech and fin:
         return "综合"
     if tech:
