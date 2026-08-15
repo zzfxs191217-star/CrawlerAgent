@@ -51,7 +51,7 @@ def check_topic(topic: str, top_k: int = 5) -> dict:
     else:
         verdict = "none"
         message = (
-            "❌ 没料：现有白名单媒体（科技/AI/文娱/消费向）近期基本不覆盖这个话题，"
+            "❌ 没料：现有白名单媒体（科技/金融向）近期基本不覆盖这个话题，"
             "跑完整分析大概率拿不到事实。"
         )
         suggestions = [

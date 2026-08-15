@@ -26,8 +26,8 @@ SPEC = {
     "function": {
         "name": "search_news",
         "description": (
-            "在可信垂直媒体（钛媒体、爱范儿、极客公园、量子位、少数派、开源中国、cnBeta、InfoQ中文、雷锋网、新智元、IT之家、机核、Solidot 的 RSS，"
-            "以及娱乐资本论、品牌星球的文章列表）的最新文章中按关键词检索候选报道，返回标题、来源、链接与日期。"
+            "在可信垂直媒体（钛媒体、爱范儿、极客公园、量子位、少数派、开源中国、cnBeta、InfoQ中文、雷锋网、新智元、IT之家、Solidot 的 RSS，"
+            "以及第一财经、界面新闻、21财经的文章列表）的最新文章中按关键词检索候选报道，返回标题、来源、链接与日期。"
             "适合用来发现近期相关报道。如果某个关键词搜不到结果，请换更宽泛的关键词（如：通义千问、Qwen、阿里云）重试。"
         ),
         "parameters": {
@@ -142,12 +142,18 @@ def _match_list_page(html_text: str, base_url: str, cfg: dict, orig_terms: list[
             continue
 
         title = ""
-        for sel in title_sels:
-            node = a.select_one(sel)
-            text = node.get_text(" ", strip=True) if node else ""
-            if len(text) >= 4:
-                title = text
-                break
+        title_attr = cfg.get("title_attr")
+        if title_attr:
+            title = (a.get(title_attr) or "").strip()
+            if len(title) < 4:
+                title = ""
+        if not title:
+            for sel in title_sels:
+                node = a.select_one(sel)
+                text = node.get_text(" ", strip=True) if node else ""
+                if len(text) >= 4:
+                    title = text
+                    break
         if not title:
             clone = BeautifulSoup(str(a), "html.parser").a or a
             if drop_date_spans:

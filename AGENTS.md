@@ -40,8 +40,8 @@
 9. 报告导出（V3.2）：`crawler/export.py` 把 Markdown 报告渲染为 PDF（reportlab，中文字体回退 STSong-Light）与 Word（python-docx），CLI `--export` + Web 界面按钮
 10. 验收修复（V3.2，D-012）：正文抽取优先内容容器；表格单元格 `|` 转义全角；PDF 表格行归一化+等分列宽；RSS 候选按相关度打分排序
 11. 选题助手（V3.3，D-013）：`topic_check.py` 实体词提取 + 相关度判定（排除通用词/母公司噪音）；Web「选题助手」页签；`run_pipeline` 失败时输出诊断建议
-12. 数据源扩展（方向 C 第一步，D-014）：发现层新增 RSS——IT之家/机核/Solidot；内容层白名单新增——IT之家/机核/Solidot/娱乐资本论/品牌星球；已实测不可用不接入（机器之心付费、亿欧 202、DoNews/品玩 404、晚点 SSL、三声废弃、36氪/虎嗅反爬）
-13. 列表页发现（方向 C 第二步，D-015）：`search.py` 新增 `_match_list_page`，对无 RSS 站点（娱乐资本论/品牌星球）抓首页列表提取标题参与检索（配置在 `sources.LIST_PAGES`）；已知局限：复合实体词（白敬亭GOODBAI）拆词待优化、品牌星球“精选”页为前端渲染无法静态抓取
+12. 数据源（科技+金融，D-014/D-016）：发现层 RSS——钛媒体/爱范儿/极客公园/量子位/少数派/开源中国/cnBeta/InfoQ中文/雷锋网/新智元/IT之家/Solidot；列表页——第一财经/界面新闻/21财经；已实测不可用不接入（机器之心付费、亿欧 202、DoNews/品玩 404、晚点 SSL、华尔街见闻前端渲染、36氪/虎嗅反爬）；文娱源（机核/娱乐资本论/品牌星球）已按 D-016 移除
+13. 列表页发现（D-015/D-016）：`search.py` `_match_list_page` 从 `sources.LIST_PAGES` 抓首页提取标题（支持 `title_selectors` / `title_attr`，按 URL 去重）；复合实体词（白敬亭GOODBAI）拆词仍待优化
 
 ## 五、工作约定
 
