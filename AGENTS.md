@@ -11,8 +11,8 @@
 - 语言：Python 3.10+（本机 Python 3.14）
 - 依赖管理：uv（本机 0.12.4）；包源用清华 PyPI 镜像（全国内、无代理）
 - LLM：阿里云百炼，OpenAI 兼容接口（`https://dashscope.aliyuncs.com/compatible-mode/v1`）
-  - `qwen3.7-flash-2026-07-15`：高频机械活（摘要/提取/整理）
-  - `qwen3.5-omni-plus-2026-03-15`：低频高质量活（规划/分析/成文/审查）
+  - `qwen3.7-plus`：高频机械活（摘要/提取/整理）
+  - `qwen3.7-plus`：低频高质量活（规划/分析/成文/审查）
 - 核心库：openai、python-dotenv、requests、beautifulsoup4
 - 网络策略：所有外部端点国内可直达、不使用代理（见 `docs/decisions.md` D-006）
 
